@@ -1,0 +1,10 @@
+main:
+  - title: "Getting started"
+    url: /getting-started/
+  - title: "Usage"
+    url: /usage/
+  - title: "Examples"
+    url: /examples/
+  - title: "GitHub"
+    icon: "fab fa-fw fa-github"
+    url: https://github.com/ekkinox/yai
