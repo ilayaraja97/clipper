@@ -4,7 +4,6 @@
 
 [![build](https://github.com/ilayaraja97/clipper/actions/workflows/build.yml/badge.svg)](https://github.com/ilayaraja97/clipper/actions/workflows/build.yml)
 [![release](https://github.com/ilayaraja97/clipper/actions/workflows/release.yml/badge.svg)](https://github.com/ilayaraja97/clipper/actions/workflows/release.yml)
-[![doc](https://github.com/ilayaraja97/clipper/actions/workflows/doc.yml/badge.svg)](https://github.com/ilayaraja97/clipper/actions/workflows/doc.yml)
 
 > Unleash the power of artificial intelligence to streamline your command line experience.
 
