@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ekkinox/yai/ai"
-	"github.com/ekkinox/yai/config"
-	"github.com/ekkinox/yai/history"
-	"github.com/ekkinox/yai/run"
+	"github.com/ilayaraja97/clipper/ai"
+	"github.com/ilayaraja97/clipper/config"
+	"github.com/ilayaraja97/clipper/history"
+	"github.com/ilayaraja97/clipper/run"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"

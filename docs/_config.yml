@@ -1,14 +1,14 @@
-title: 🚀 Yai 💬
+title: Clipper
 title_separator: "|"
-email: ekkinox@gmail.com
-repository: "ekkinox/yai"
+email: ""
+repository: "ilayaraja97/clipper"
 description: >-
-  Yai (your AI) is an artificial intelligence powered terminal assistant. 
+  Clipper is an artificial intelligence powered terminal assistant. 
   Use it to prepare and execute any command lines from requests expressed in your natural language. 
   You can also engage in conversation with it about any topics you may think about.
   Unleash the power of AI with the comfort of staying at /home !
-twitter_username: noxekki
-github_username: ekkinox
+twitter_username: ""
+github_username: ilayaraja97
 minimal_mistakes_skin: dark
 search: false
 markdown: kramdown
@@ -26,25 +26,25 @@ plugins:
   - jekyll-include-cache
 
 author:
-  name   : "Jonathan Vuillemin"
-  avatar : "https://avatars.githubusercontent.com/u/6922385?s=400&u=87b8f6b9674c3667b1a75e294387c7af3e335b69&v=4"
-  bio    : "Backend and other things."
+  name   : "ilayaraja97"
+  avatar : ""
+  bio    : "Maintainer of Clipper."
   links:
     - label: "Twitter"
       icon: "fab fa-fw fa-twitter-square"
-      url: "https://twitter.com/noxekki"
+      url: ""
     - label: "GitHub"
       icon: "fab fa-fw fa-github"
-      url: "https://github.com/ekkinox"
+      url: "https://github.com/ilayaraja97"
 
 footer:
   links:
     - label: "Twitter"
       icon: "fab fa-fw fa-twitter-square"
-      url: "https://twitter.com/noxekki"
+      url: ""
     - label: "GitHub"
       icon: "fab fa-fw fa-github"
-      url: "https://github.com/ekkinox"
+      url: "https://github.com/ilayaraja97"
 
 defaults:
   - scope:

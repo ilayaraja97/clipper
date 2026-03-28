@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.7.0
+
+### Changed
+
+- Changed project name from Yai to Clipper and now maintained by [@ilayaraja97](https://github.com/ilayaraja97)
+
+### Added
+
+- Integration with langchain to support any LLM with openrouter API
+
 ## 0.6.0
 
 ### Changed

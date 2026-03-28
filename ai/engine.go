@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 
-	"github.com/ekkinox/yai/config"
-	"github.com/ekkinox/yai/system"
+	"github.com/ilayaraja97/clipper/config"
+	"github.com/ilayaraja97/clipper/system"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/llms/openai"
 )
 
 const noexec = "[noexec]"
@@ -22,21 +22,23 @@ const noexec = "[noexec]"
 type Engine struct {
 	mode         EngineMode
 	config       *config.Config
-	client       *openai.Client
-	execMessages []openai.ChatCompletionMessage
-	chatMessages []openai.ChatCompletionMessage
+	client       llms.Model
+	execMessages []llms.MessageContent
+	chatMessages []llms.MessageContent
 	channel      chan EngineChatStreamOutput
 	pipe         string
 	running      bool
 }
 
 func NewEngine(mode EngineMode, config *config.Config) (*Engine, error) {
-	var client *openai.Client
+	opts := []openai.Option{
+		openai.WithToken(config.GetAiConfig().GetKey()),
+	}
+	if config.GetAiConfig().GetBaseURL() != "" {
+		opts = append(opts, openai.WithBaseURL(config.GetAiConfig().GetBaseURL()))
+	}
 
 	if config.GetAiConfig().GetProxy() != "" {
-
-		clientConfig := openai.DefaultConfig(config.GetAiConfig().GetKey())
-
 		proxyUrl, err := url.Parse(config.GetAiConfig().GetProxy())
 		if err != nil {
 			return nil, err
@@ -46,21 +48,22 @@ func NewEngine(mode EngineMode, config *config.Config) (*Engine, error) {
 			Proxy: http.ProxyURL(proxyUrl),
 		}
 
-		clientConfig.HTTPClient = &http.Client{
+		httpClient := &http.Client{
 			Transport: transport,
 		}
-
-		client = openai.NewClientWithConfig(clientConfig)
-	} else {
-		client = openai.NewClient(config.GetAiConfig().GetKey())
+		opts = append(opts, openai.WithHTTPClient(httpClient))
+	}
+	client, err := openai.New(opts...)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Engine{
 		mode:         mode,
 		config:       config,
 		client:       client,
-		execMessages: make([]openai.ChatCompletionMessage, 0),
-		chatMessages: make([]openai.ChatCompletionMessage, 0),
+		execMessages: make([]llms.MessageContent, 0),
+		chatMessages: make([]llms.MessageContent, 0),
 		channel:      make(chan EngineChatStreamOutput),
 		pipe:         "",
 		running:      false,
@@ -102,17 +105,17 @@ func (e *Engine) Interrupt() *Engine {
 
 func (e *Engine) Clear() *Engine {
 	if e.mode == ExecEngineMode {
-		e.execMessages = []openai.ChatCompletionMessage{}
+		e.execMessages = []llms.MessageContent{}
 	} else {
-		e.chatMessages = []openai.ChatCompletionMessage{}
+		e.chatMessages = []llms.MessageContent{}
 	}
 
 	return e
 }
 
 func (e *Engine) Reset() *Engine {
-	e.execMessages = []openai.ChatCompletionMessage{}
-	e.chatMessages = []openai.ChatCompletionMessage{}
+	e.execMessages = []llms.MessageContent{}
+	e.chatMessages = []llms.MessageContent{}
 
 	return e
 }
@@ -124,19 +127,21 @@ func (e *Engine) ExecCompletion(input string) (*EngineExecOutput, error) {
 
 	e.appendUserMessage(input)
 
-	resp, err := e.client.CreateChatCompletion(
+	resp, err := e.client.GenerateContent(
 		ctx,
-		openai.ChatCompletionRequest{
-			Model:     e.config.GetAiConfig().GetModel(),
-			MaxTokens: e.config.GetAiConfig().GetMaxTokens(),
-			Messages:  e.prepareCompletionMessages(),
-		},
+		e.prepareCompletionMessages(),
+		llms.WithModel(e.config.GetAiConfig().GetModel()),
+		llms.WithMaxTokens(e.config.GetAiConfig().GetMaxTokens()),
+		llms.WithTemperature(e.config.GetAiConfig().GetTemperature()),
 	)
 	if err != nil {
 		return nil, err
 	}
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("empty response from model")
+	}
 
-	content := resp.Choices[0].Message.Content
+	content := resp.Choices[0].Content
 	e.appendAssistantMessage(content)
 
 	var output EngineExecOutput
@@ -168,51 +173,19 @@ func (e *Engine) ChatStreamCompletion(input string) error {
 
 	e.appendUserMessage(input)
 
-	req := openai.ChatCompletionRequest{
-		Model:     e.config.GetAiConfig().GetModel(),
-		MaxTokens: e.config.GetAiConfig().GetMaxTokens(),
-		Messages:  e.prepareCompletionMessages(),
-		Stream:    true,
-	}
-
-	stream, err := e.client.CreateChatCompletionStream(ctx, req)
-	if err != nil {
-		return err
-	}
-	defer stream.Close()
-
 	var output string
-
-	for {
-		if e.running {
-			resp, err := stream.Recv()
-
-			if errors.Is(err, io.EOF) {
-				executable := false
-				if e.mode == ExecEngineMode {
-					if !strings.HasPrefix(output, noexec) && !strings.Contains(output, "\n") {
-						executable = true
-					}
-				}
-
-				e.channel <- EngineChatStreamOutput{
-					content:    "",
-					last:       true,
-					executable: executable,
-				}
-				e.running = false
-				e.appendAssistantMessage(output)
-
-				return nil
+	_, err := e.client.GenerateContent(
+		ctx,
+		e.prepareCompletionMessages(),
+		llms.WithModel(e.config.GetAiConfig().GetModel()),
+		llms.WithMaxTokens(e.config.GetAiConfig().GetMaxTokens()),
+		llms.WithTemperature(e.config.GetAiConfig().GetTemperature()),
+		llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
+			if !e.running {
+				return context.Canceled
 			}
 
-			if err != nil {
-				e.running = false
-				return err
-			}
-
-			delta := resp.Choices[0].Delta.Content
-
+			delta := string(chunk)
 			output += delta
 
 			e.channel <- EngineChatStreamOutput{
@@ -220,26 +193,37 @@ func (e *Engine) ChatStreamCompletion(input string) error {
 				last:    false,
 			}
 
-			// time.Sleep(time.Microsecond * 100)
-		} else {
-			stream.Close()
-
 			return nil
+		}),
+	)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		e.running = false
+		return err
+	}
+
+	executable := false
+	if e.mode == ExecEngineMode {
+		if !strings.HasPrefix(output, noexec) && !strings.Contains(output, "\n") {
+			executable = true
 		}
 	}
+
+	e.channel <- EngineChatStreamOutput{
+		content:    "",
+		last:       true,
+		executable: executable,
+	}
+	e.running = false
+	e.appendAssistantMessage(output)
+
+	return nil
 }
 
 func (e *Engine) appendUserMessage(content string) *Engine {
 	if e.mode == ExecEngineMode {
-		e.execMessages = append(e.execMessages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleUser,
-			Content: content,
-		})
+		e.execMessages = append(e.execMessages, llms.TextParts(llms.ChatMessageTypeHuman, content))
 	} else {
-		e.chatMessages = append(e.chatMessages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleUser,
-			Content: content,
-		})
+		e.chatMessages = append(e.chatMessages, llms.TextParts(llms.ChatMessageTypeHuman, content))
 	}
 
 	return e
@@ -247,35 +231,23 @@ func (e *Engine) appendUserMessage(content string) *Engine {
 
 func (e *Engine) appendAssistantMessage(content string) *Engine {
 	if e.mode == ExecEngineMode {
-		e.execMessages = append(e.execMessages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleAssistant,
-			Content: content,
-		})
+		e.execMessages = append(e.execMessages, llms.TextParts(llms.ChatMessageTypeAI, content))
 	} else {
-		e.chatMessages = append(e.chatMessages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleAssistant,
-			Content: content,
-		})
+		e.chatMessages = append(e.chatMessages, llms.TextParts(llms.ChatMessageTypeAI, content))
 	}
 
 	return e
 }
 
-func (e *Engine) prepareCompletionMessages() []openai.ChatCompletionMessage {
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: e.prepareSystemPrompt(),
-		},
+func (e *Engine) prepareCompletionMessages() []llms.MessageContent {
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, e.prepareSystemPrompt()),
 	}
 
 	if e.pipe != "" {
 		messages = append(
 			messages,
-			openai.ChatCompletionMessage{
-				Role:    openai.ChatMessageRoleUser,
-				Content: e.preparePipePrompt(),
-			},
+			llms.TextParts(llms.ChatMessageTypeHuman, e.preparePipePrompt()),
 		)
 	}
 
@@ -304,7 +276,7 @@ func (e *Engine) prepareSystemPrompt() string {
 }
 
 func (e *Engine) prepareSystemPromptExecPart() string {
-	return "Your are Yai, a powerful terminal assistant generating a JSON containing a command line for my input.\n" +
+	return "Your are Clipper, a powerful terminal assistant generating a JSON containing a command line for my input.\n" +
 		"You will always reply using the following json structure: {\"cmd\":\"the command\", \"exp\": \"some explanation\", \"exec\": true}.\n" +
 		"Your answer will always only contain the json structure, never add any advice or supplementary detail or information, even if I asked the same question before.\n" +
 		"The field cmd will contain a single line command (don't use new lines, use separators like && and ; instead).\n" +
@@ -313,22 +285,22 @@ func (e *Engine) prepareSystemPromptExecPart() string {
 		"\n" +
 		"Examples:\n" +
 		"Me: list all files in my home dir\n" +
-		"Yai: {\"cmd\":\"ls ~\", \"exp\": \"list all files in your home dir\", \"exec\\: true}\n" +
+		"Clipper: {\"cmd\":\"ls ~\", \"exp\": \"list all files in your home dir\", \"exec\\: true}\n" +
 		"Me: list all pods of all namespaces\n" +
-		"Yai: {\"cmd\":\"kubectl get pods --all-namespaces\", \"exp\": \"list pods form all k8s namespaces\", \"exec\": true}\n" +
+		"Clipper: {\"cmd\":\"kubectl get pods --all-namespaces\", \"exp\": \"list pods form all k8s namespaces\", \"exec\": true}\n" +
 		"Me: how are you ?\n" +
-		"Yai: {\"cmd\":\"\", \"exp\": \"I'm good thanks but I cannot generate a command for this. Use the chat mode to discuss.\", \"exec\": false}"
+		"Clipper: {\"cmd\":\"\", \"exp\": \"I'm good thanks but I cannot generate a command for this. Use the chat mode to discuss.\", \"exec\": false}"
 }
 
 func (e *Engine) prepareSystemPromptChatPart() string {
-	return "You are Yai a powerful terminal assistant created by github.com/ekkinox.\n" +
+	return "You are Clipper, a powerful terminal assistant created by github.com/ilayaraja97.\n" +
 		"You will answer in the most helpful possible way.\n" +
 		"Always format your answer in markdown format.\n\n" +
 		"For example:\n" +
 		"Me: What is 2+2 ?\n" +
-		"Yai: The answer for `2+2` is `4`\n" +
+		"Clipper: The answer for `2+2` is `4`\n" +
 		"Me: +2 again ?\n" +
-		"Yai: The answer is `6`\n"
+		"Clipper: The answer is `6`\n"
 }
 
 func (e *Engine) prepareSystemPromptContextPart() string {
