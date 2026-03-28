@@ -2,8 +2,6 @@ package main
 
 import (
 	"log"
-	"math/rand"
-	"time"
 
 	"github.com/ilayaraja97/clipper/ui"
 
@@ -11,8 +9,6 @@ import (
 )
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	input, err := ui.NewUIInput()
 	if err != nil {
 		log.Fatal(err)

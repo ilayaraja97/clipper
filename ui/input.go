@@ -37,7 +37,7 @@ func NewUIInput() (*UiInput, error) {
 	}
 
 	pipe := ""
-	if !(stat.Mode()&os.ModeNamedPipe == 0 && stat.Size() == 0) {
+	if stat.Mode()&os.ModeNamedPipe != 0 || stat.Size() > 0 {
 		reader := bufio.NewReader(os.Stdin)
 		var builder strings.Builder
 
