@@ -1,13 +1,13 @@
 #!/bin/bash
 
-BINNAME="${BINNAME:-clipper}"
+BINNAME="${BINNAME:-yai}"
 BINDIR="${BINDIR:-/usr/local/bin}"
 
-echo "Uninstallation of Clipper ..."
+echo "Uninstallation of Yai ..."
 echo
 
 sudo rm $BINDIR/$BINNAME
 sudo rm "${HOME}/.config/${BINNAME}.json"
 
 echo
-echo "Uninstallation of Clipper complete!"
+echo "Uninstallation of Yai complete!"

@@ -3,16 +3,15 @@ package system
 import (
 	"fmt"
 	"os"
-	"os/user"
-	"path/filepath"
 	"runtime"
 	"strings"
 
-	"github.com/ilayaraja97/clipper/run"
+	"github.com/ekkinox/yai/run"
+
 	"github.com/mitchellh/go-homedir"
 )
 
-const APPLICATION_NAME = "Clipper"
+const APPLICATION_NAME = "Yai"
 
 type Analysis struct {
 	operatingSystem OperatingSystem
@@ -82,38 +81,21 @@ func GetOperatingSystem() OperatingSystem {
 }
 
 func GetDistribution() string {
-	if runtime.GOOS != "linux" {
-		return ""
-	}
-
-	content, err := os.ReadFile(filepath.Clean("/etc/os-release"))
+	dist, err := run.RunCommand("lsb_release", "-sd")
 	if err != nil {
 		return ""
 	}
 
-	for _, line := range strings.Split(string(content), "\n") {
-		if !strings.HasPrefix(line, "PRETTY_NAME=") {
-			continue
-		}
-
-		dist := strings.TrimPrefix(line, "PRETTY_NAME=")
-		return strings.Trim(dist, "\"")
-	}
-
-	return ""
+	return strings.Trim(strings.Trim(dist, "\n"), "\"")
 }
 
 func GetShell() string {
-	shell := strings.TrimSpace(os.Getenv("SHELL"))
-	if shell == "" {
-		shellOutput, err := run.RunCommand("echo", os.Getenv("SHELL"))
-		if err != nil {
-			return ""
-		}
-		shell = strings.Trim(strings.Trim(shellOutput, "\n"), "\"")
+	shell, err := run.RunCommand("echo", os.Getenv("SHELL"))
+	if err != nil {
+		return ""
 	}
 
-	split := strings.Split(shell, "/")
+	split := strings.Split(strings.Trim(strings.Trim(shell, "\n"), "\""), "/")
 
 	return split[len(split)-1]
 }
@@ -128,35 +110,21 @@ func GetHomeDirectory() string {
 }
 
 func GetUsername() string {
-	name := strings.TrimSpace(os.Getenv("USER"))
-	if name == "" {
-		currentUser, err := user.Current()
-		if err == nil && currentUser.Username != "" {
-			if split := strings.Split(currentUser.Username, `\`); len(split) > 0 {
-				name = split[len(split)-1]
-			} else {
-				name = currentUser.Username
-			}
-		}
+	name, err := run.RunCommand("echo", os.Getenv("USER"))
+	if err != nil {
+		return ""
 	}
 
-	return strings.TrimSpace(name)
+	return strings.Trim(name, "\n")
 }
 
 func GetEditor() string {
-	name := strings.TrimSpace(os.Getenv("EDITOR"))
-	if name == "" {
-		nameOutput, err := run.RunCommand("echo", os.Getenv("EDITOR"))
-		if err == nil {
-			name = strings.Trim(strings.Trim(nameOutput, "\n"), "\"")
-		}
-	}
-
-	if name == "" {
+	name, err := run.RunCommand("echo", os.Getenv("EDITOR"))
+	if err != nil {
 		return "nano"
 	}
 
-	return strings.TrimSpace(name)
+	return strings.Trim(name, "\n")
 }
 
 func GetConfigFile() string {

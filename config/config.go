@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ilayaraja97/clipper/system"
+	"github.com/sashabaranov/go-openai"
+
+	"github.com/ekkinox/yai/system"
 	"github.com/spf13/viper"
 )
-
-const defaultOpenAIModel = "gpt-3.5-turbo"
 
 type Config struct {
 	ai     AiConfig
@@ -42,7 +42,6 @@ func NewConfig() (*Config, error) {
 		ai: AiConfig{
 			key:         viper.GetString(openai_key),
 			model:       viper.GetString(openai_model),
-			baseURL:     viper.GetString(openai_base_url),
 			proxy:       viper.GetString(openai_proxy),
 			temperature: viper.GetFloat64(openai_temperature),
 			maxTokens:   viper.GetInt(openai_max_tokens),
@@ -60,8 +59,7 @@ func WriteConfig(key string, write bool) (*Config, error) {
 
 	// ai defaults
 	viper.Set(openai_key, key)
-	viper.Set(openai_model, defaultOpenAIModel)
-	viper.SetDefault(openai_base_url, "")
+	viper.Set(openai_model, openai.GPT3Dot5Turbo)
 	viper.SetDefault(openai_proxy, "")
 	viper.SetDefault(openai_temperature, 0.2)
 	viper.SetDefault(openai_max_tokens, 1000)

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-REPOOWNER="ilayaraja97"
-REPONAME="clipper"
+REPOOWNER="ekkinox"
+REPONAME="yai"
 RELEASETAG=$(curl -s "https://api.github.com/repos/$REPOOWNER/$REPONAME/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
 KERNEL=$(uname -s 2>/dev/null || /usr/bin/uname -s)
@@ -42,18 +42,18 @@ case ${MACHINE} in
         ;;
 esac
 
-BINNAME="${BINNAME:-clipper}"
+BINNAME="${BINNAME:-yai}"
 BINDIR="${BINDIR:-/usr/local/bin}"
-URL="https://github.com/$REPOOWNER/$REPONAME/releases/download/${RELEASETAG}/clipper_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz"
+URL="https://github.com/$REPOOWNER/$REPONAME/releases/download/${RELEASETAG}/yai_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz"
 
 echo "Downloading version $RELEASETAG from $URL"
 echo
 
-curl -q --fail --location --progress-bar --output "clipper_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz" "$URL"
-tar xzf "clipper_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz"
+curl -q --fail --location --progress-bar --output "yai_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz" "$URL"
+tar xzf "yai_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz"
 chmod +x $BINNAME
 sudo mv $BINNAME $BINDIR/$BINNAME
-rm "clipper_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz"
+rm "yai_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz"
 
 echo
 echo "Installation of version $RELEASETAG complete!"

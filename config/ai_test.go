@@ -9,7 +9,6 @@ import (
 func TestAiConfig(t *testing.T) {
 	t.Run("GetKey", testGetKey)
 	t.Run("GetProxy", testGetProxy)
-	t.Run("GetBaseURL", testGetBaseURL)
 	t.Run("GetTemperature", testGetTemperature)
 	t.Run("GetMaxTokens", testGetMaxTokens)
 }
@@ -30,15 +29,6 @@ func testGetProxy(t *testing.T) {
 	actualProxy := aiConfig.GetProxy()
 
 	assert.Equal(t, expectedProxy, actualProxy, "The two proxies should be the same.")
-}
-
-func testGetBaseURL(t *testing.T) {
-	expectedBaseURL := "https://openrouter.ai/api/v1"
-	aiConfig := AiConfig{baseURL: expectedBaseURL}
-
-	actualBaseURL := aiConfig.GetBaseURL()
-
-	assert.Equal(t, expectedBaseURL, actualBaseURL, "The two base URLs should be the same.")
 }
 
 func testGetTemperature(t *testing.T) {
