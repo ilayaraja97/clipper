@@ -11,8 +11,6 @@ import (
 )
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	input, err := ui.NewUIInput()
 	if err != nil {
 		log.Fatal(err)
