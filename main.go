@@ -2,8 +2,6 @@ package main
 
 import (
 	"log"
-	"math/rand"
-	"time"
 
 	"github.com/ilayaraja97/clipper/ui"
 
