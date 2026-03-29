@@ -426,8 +426,6 @@ func (u *Ui) View() string {
 			return u.components.renderer.RenderContent(u.state.buffer)
 		}
 	}
-
-	return ""
 }
 
 func (u *Ui) startRepl(config *config.Config) tea.Cmd {
