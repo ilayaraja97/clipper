@@ -2,18 +2,28 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ilayaraja97/clipper/system"
 	"github.com/spf13/viper"
 )
 
-const defaultOpenAIModel = "gpt-3.5-turbo"
-
 type Config struct {
 	ai     AiConfig
 	user   UserConfig
 	system *system.Analysis
+}
+
+type ConfigInput struct {
+	Key         string
+	Model       string
+	BaseURL     string
+	Proxy       string
+	Temperature string
+	MaxTokens   string
 }
 
 func (c *Config) GetAiConfig() AiConfig {
@@ -32,7 +42,7 @@ func NewConfig() (*Config, error) {
 	system := system.Analyse()
 
 	viper.SetConfigName(strings.ToLower(system.GetApplicationName()))
-	viper.AddConfigPath(fmt.Sprintf("%s/.config/", system.GetHomeDirectory()))
+	viper.AddConfigPath(filepath.Join(system.GetHomeDirectory(), ".config"))
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, err
@@ -40,12 +50,12 @@ func NewConfig() (*Config, error) {
 
 	return &Config{
 		ai: AiConfig{
-			key:         viper.GetString(openai_key),
-			model:       viper.GetString(openai_model),
-			baseURL:     viper.GetString(openai_base_url),
-			proxy:       viper.GetString(openai_proxy),
-			temperature: viper.GetFloat64(openai_temperature),
-			maxTokens:   viper.GetInt(openai_max_tokens),
+			key:         viper.GetString(key),
+			model:       viper.GetString(model),
+			baseURL:     viper.GetString(baseURL),
+			proxy:       viper.GetString(proxy),
+			temperature: viper.GetFloat64(temperature),
+			maxTokens:   viper.GetInt(maxTokens),
 		},
 		user: UserConfig{
 			defaultPromptMode: viper.GetString(user_default_prompt_mode),
@@ -55,24 +65,62 @@ func NewConfig() (*Config, error) {
 	}, nil
 }
 
-func WriteConfig(key string, write bool) (*Config, error) {
+func WriteConfig(input ConfigInput, write bool) (*Config, error) {
 	system := system.Analyse()
 
+	keyVal := strings.TrimSpace(input.Key)
+	if keyVal == "" {
+		keyVal = DefaultKey
+	}
+
+	modelVal := strings.TrimSpace(input.Model)
+	if modelVal == "" {
+		modelVal = DefaultModel
+	}
+
+	baseURLVal := strings.TrimSpace(input.BaseURL)
+	if baseURLVal == "" {
+		baseURLVal = DefaultBaseURL
+	}
+
+	proxyVal := strings.TrimSpace(input.Proxy)
+
+	temperatureVal := DefaultTemperature
+	if value := strings.TrimSpace(input.Temperature); value != "" {
+		parsedTemperature, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid temperature %q: %w", value, err)
+		}
+		temperatureVal = parsedTemperature
+	}
+
+	maxTokensVal := DefaultMaxTokens
+	if value := strings.TrimSpace(input.MaxTokens); value != "" {
+		parsedMaxTokens, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid max tokens %q: %w", value, err)
+		}
+		maxTokensVal = parsedMaxTokens
+	}
+
 	// ai defaults
-	viper.Set(openai_key, key)
-	viper.Set(openai_model, defaultOpenAIModel)
-	viper.SetDefault(openai_base_url, "")
-	viper.SetDefault(openai_proxy, "")
-	viper.SetDefault(openai_temperature, 0.2)
-	viper.SetDefault(openai_max_tokens, 1000)
+	viper.Set(key, keyVal)
+	viper.Set(model, modelVal)
+	viper.Set(baseURL, baseURLVal)
+	viper.Set(proxy, proxyVal)
+	viper.Set(temperature, temperatureVal)
+	viper.Set(maxTokens, maxTokensVal)
 
 	// user defaults
 	viper.SetDefault(user_default_prompt_mode, "exec")
 	viper.SetDefault(user_preferences, "")
 
 	if write {
-		err := viper.SafeWriteConfigAs(system.GetConfigFile())
-		if err != nil {
+		cfgPath := system.GetConfigFile()
+		if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+			return nil, err
+		}
+		if err := viper.SafeWriteConfigAs(cfgPath); err != nil {
 			return nil, err
 		}
 	}

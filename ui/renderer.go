@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -65,10 +68,16 @@ func (r *Renderer) RenderHelp(in string) string {
 	return r.helpRenderer.Render(in)
 }
 
-func (r *Renderer) RenderConfigMessage() string {
-	welcome := "Welcome! 👋  \n\n"
-	welcome += "I cannot find a configuration file, please enter an `OpenAI API key` "
-	welcome += "from https://platform.openai.com/account/api-keys so I can generate it for you."
+func (r *Renderer) RenderConfigMessage(currentLabel string, currentDescription string, progress []string) string {
+	welcome := "Welcome!  \n\n"
+	welcome += "I cannot find a configuration file, so let's set it up interactively.  \n"
+	welcome += "Press `enter` to save the current field, and leave a field blank to accept its default.  \n"
+	welcome += "Use `up` and `down` to move between fields.  \n"
+	welcome += "You can use cloud AI providers like OpenRouter, OpenAI, Gemini, or a local OpenAI-compatible server.  \n\n"
+	welcome += fmt.Sprintf("**Current field:** %s  \n", currentLabel)
+	welcome += fmt.Sprintf("%s  \n\n", currentDescription)
+	welcome += "**Setup progress**  \n"
+	welcome += strings.Join(progress, "  \n")
 
 	return welcome
 }

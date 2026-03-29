@@ -2,6 +2,7 @@ package run
 
 import (
 	"os/exec"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,14 +16,24 @@ func TestRun(t *testing.T) {
 }
 
 func testRunCommand(t *testing.T) {
-	output, err := RunCommand("echo", "Hello, World!")
+	command := "echo"
+	args := []string{"Hello, World!"}
+	expected := "Hello, World!\n"
+
+	if runtime.GOOS == "windows" {
+		command = "cmd"
+		args = []string{"/C", "echo Hello, World!"}
+		expected = "Hello, World!\r\n"
+	}
+
+	output, err := RunCommand(command, args...)
 	require.NoError(t, err)
 
-	assert.Equal(t, "Hello, World!\n", output, "The command output should be the same.")
+	assert.Equal(t, expected, output, "The command output should be the same.")
 }
 
 func testPrepareInteractiveCommand(t *testing.T) {
-	cmd := PrepareInteractiveCommand("echo 'Hello, World!'")
+	cmd := PrepareInteractiveCommand("bash", "echo 'Hello, World!'")
 
 	expectedCmd := exec.Command(
 		"bash",
@@ -34,7 +45,7 @@ func testPrepareInteractiveCommand(t *testing.T) {
 }
 
 func testPrepareEditSettingsCommand(t *testing.T) {
-	cmd := PrepareEditSettingsCommand("nano yo.json")
+	cmd := PrepareEditSettingsCommand("bash", "nano yo.json")
 
 	expectedCmd := exec.Command(
 		"bash",
@@ -43,4 +54,17 @@ func testPrepareEditSettingsCommand(t *testing.T) {
 	)
 
 	assert.Equal(t, expectedCmd.Args, cmd.Args, "The command arguments should be the same.")
+}
+
+func TestPrepareInteractiveCommandPowerShell(t *testing.T) {
+	cmd := PrepareInteractiveCommand("powershell", "Get-NetIPConfiguration")
+
+	expectedCmd := exec.Command(
+		"powershell",
+		"-NoProfile",
+		"-Command",
+		"Write-Host \"\"; Get-NetIPConfiguration; Write-Host \"\"",
+	)
+
+	assert.Equal(t, expectedCmd.Args, cmd.Args, "The PowerShell command arguments should be the same.")
 }

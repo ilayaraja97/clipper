@@ -16,6 +16,7 @@ import (
 func TestConfig(t *testing.T) {
 	t.Run("NewConfig", testNewConfig)
 	t.Run("WriteConfig", testWriteConfig)
+	t.Run("WriteConfigDefaults", testWriteConfigDefaults)
 }
 
 func setupViper(t *testing.T) {
@@ -26,12 +27,12 @@ func setupViper(t *testing.T) {
 	viper.Reset()
 	viper.SetConfigName(strings.ToLower(system.GetApplicationName()))
 	viper.AddConfigPath(tempDir)
-	viper.Set(openai_key, "test_key")
-	viper.Set(openai_model, defaultOpenAIModel)
-	viper.Set(openai_base_url, "https://openrouter.ai/api/v1")
-	viper.Set(openai_proxy, "test_proxy")
-	viper.Set(openai_temperature, 0.2)
-	viper.Set(openai_max_tokens, 2000)
+	viper.Set(key, "test_key")
+	viper.Set(model, DefaultModel)
+	viper.Set(baseURL, "https://openrouter.ai/api/v1")
+	viper.Set(proxy, "test_proxy")
+	viper.Set(temperature, 0.2)
+	viper.Set(maxTokens, 2000)
 	viper.Set(user_default_prompt_mode, "exec")
 	viper.Set(user_preferences, "test_preferences")
 
@@ -52,7 +53,7 @@ func testNewConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "test_key", cfg.GetAiConfig().GetKey())
-	assert.Equal(t, defaultOpenAIModel, cfg.GetAiConfig().GetModel())
+	assert.Equal(t, DefaultModel, cfg.GetAiConfig().GetModel())
 	assert.Equal(t, "https://openrouter.ai/api/v1", cfg.GetAiConfig().GetBaseURL())
 	assert.Equal(t, "test_proxy", cfg.GetAiConfig().GetProxy())
 	assert.Equal(t, 0.2, cfg.GetAiConfig().GetTemperature())
@@ -67,11 +68,18 @@ func testWriteConfig(t *testing.T) {
 	setupViper(t)
 	defer cleanup(t)
 
-	cfg, err := WriteConfig("new_test_key", false)
+	cfg, err := WriteConfig(ConfigInput{
+		Key:         "new_test_key",
+		Model:       DefaultModel,
+		BaseURL:     "https://openrouter.ai/api/v1",
+		Proxy:       "test_proxy",
+		Temperature: "0.2",
+		MaxTokens:   "2000",
+	}, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "new_test_key", cfg.GetAiConfig().GetKey())
-	assert.Equal(t, defaultOpenAIModel, cfg.GetAiConfig().GetModel())
+	assert.Equal(t, DefaultModel, cfg.GetAiConfig().GetModel())
 	assert.Equal(t, "https://openrouter.ai/api/v1", cfg.GetAiConfig().GetBaseURL())
 	assert.Equal(t, "test_proxy", cfg.GetAiConfig().GetProxy())
 	assert.Equal(t, 0.2, cfg.GetAiConfig().GetTemperature())
@@ -81,12 +89,27 @@ func testWriteConfig(t *testing.T) {
 
 	assert.NotNil(t, cfg.GetSystemConfig())
 
-	assert.Equal(t, "new_test_key", viper.GetString(openai_key))
-	assert.Equal(t, defaultOpenAIModel, viper.GetString(openai_model))
-	assert.Equal(t, "https://openrouter.ai/api/v1", viper.GetString(openai_base_url))
-	assert.Equal(t, "test_proxy", viper.GetString(openai_proxy))
-	assert.Equal(t, 0.2, viper.GetFloat64(openai_temperature))
-	assert.Equal(t, 2000, viper.GetInt(openai_max_tokens))
+	assert.Equal(t, "new_test_key", viper.GetString(key))
+	assert.Equal(t, DefaultModel, viper.GetString(model))
+	assert.Equal(t, "https://openrouter.ai/api/v1", viper.GetString(baseURL))
+	assert.Equal(t, "test_proxy", viper.GetString(proxy))
+	assert.Equal(t, 0.2, viper.GetFloat64(temperature))
+	assert.Equal(t, 2000, viper.GetInt(maxTokens))
 	assert.Equal(t, "exec", viper.GetString(user_default_prompt_mode))
 	assert.Equal(t, "test_preferences", viper.GetString(user_preferences))
+}
+
+func testWriteConfigDefaults(t *testing.T) {
+	setupViper(t)
+	defer cleanup(t)
+
+	cfg, err := WriteConfig(ConfigInput{}, false)
+	require.NoError(t, err)
+
+	assert.Equal(t, DefaultKey, cfg.GetAiConfig().GetKey())
+	assert.Equal(t, DefaultModel, cfg.GetAiConfig().GetModel())
+	assert.Equal(t, DefaultBaseURL, cfg.GetAiConfig().GetBaseURL())
+	assert.Equal(t, DefaultProxy, cfg.GetAiConfig().GetProxy())
+	assert.Equal(t, DefaultTemperature, cfg.GetAiConfig().GetTemperature())
+	assert.Equal(t, DefaultMaxTokens, cfg.GetAiConfig().GetMaxTokens())
 }

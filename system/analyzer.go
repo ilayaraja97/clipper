@@ -1,14 +1,12 @@
 package system
 
 import (
-	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
 
-	"github.com/ilayaraja97/clipper/run"
 	"github.com/mitchellh/go-homedir"
 )
 
@@ -105,17 +103,17 @@ func GetDistribution() string {
 
 func GetShell() string {
 	shell := strings.TrimSpace(os.Getenv("SHELL"))
-	if shell == "" {
-		shellOutput, err := run.RunCommand("echo", os.Getenv("SHELL"))
-		if err != nil {
-			return ""
-		}
-		shell = strings.Trim(strings.Trim(shellOutput, "\n"), "\"")
+	if shell != "" {
+		split := strings.Split(shell, "/")
+
+		return split[len(split)-1]
 	}
 
-	split := strings.Split(shell, "/")
+	if runtime.GOOS == "windows" {
+		return "powershell"
+	}
 
-	return split[len(split)-1]
+	return "sh"
 }
 
 func GetHomeDirectory() string {
@@ -145,24 +143,21 @@ func GetUsername() string {
 
 func GetEditor() string {
 	name := strings.TrimSpace(os.Getenv("EDITOR"))
-	if name == "" {
-		nameOutput, err := run.RunCommand("echo", os.Getenv("EDITOR"))
-		if err == nil {
-			name = strings.Trim(strings.Trim(nameOutput, "\n"), "\"")
-		}
+	if name != "" {
+		return strings.TrimSpace(name)
 	}
 
-	if name == "" {
-		return "nano"
+	if runtime.GOOS == "windows" {
+		return "notepad"
 	}
 
-	return strings.TrimSpace(name)
+	return "nano"
 }
 
 func GetConfigFile() string {
-	return fmt.Sprintf(
-		"%s/.config/%s.json",
+	return filepath.Join(
 		GetHomeDirectory(),
-		strings.ToLower(APPLICATION_NAME),
+		".config",
+		strings.ToLower(APPLICATION_NAME)+".json",
 	)
 }
