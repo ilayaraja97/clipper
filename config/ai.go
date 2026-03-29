@@ -3,10 +3,10 @@ package config
 const (
 	key         = "KEY"
 	model       = "MODEL"
-	baseURL    = "BASE_URL"
+	baseURL     = "BASE_URL"
 	proxy       = "PROXY"
 	temperature = "TEMPERATURE"
-	maxTokens  = "MAX_TOKENS"
+	maxTokens   = "MAX_TOKENS"
 )
 
 const (
