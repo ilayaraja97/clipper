@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.7.1
+
+### Added
+
+- Added support for windows
+- Interactive terminal for creating settings
+
 ## 0.7.0
 
 ### Changed

@@ -419,9 +419,11 @@ func (u *Ui) View() string {
 		if u.state.querying {
 			return u.components.spinner.View()
 		} else {
-			if !u.state.executing {
-				return u.components.renderer.RenderContent(u.state.buffer)
+			if u.state.executing {
+				return u.components.renderer.RenderHelp("\n  executing command...")
 			}
+
+			return u.components.renderer.RenderContent(u.state.buffer)
 		}
 	}
 
@@ -560,17 +562,16 @@ func (u *Ui) finishConfig() tea.Cmd {
 	u.engine = engine
 
 	if u.state.runMode == ReplMode {
+		nextPromptMode := resolvePromptMode(u.state.promptMode, config)
+		u.state.buffer = ""
+		u.state.command = ""
+		u.state.promptMode = nextPromptMode
+		u.components.prompt = NewPrompt(nextPromptMode)
+
 		return tea.Sequence(
 			tea.ClearScreen,
 			tea.Println(u.components.renderer.RenderSuccess("\n[settings ok]\n")),
 			textinput.Blink,
-			func() tea.Msg {
-				u.state.buffer = ""
-				u.state.command = ""
-				u.components.prompt = NewPrompt(ExecPromptMode)
-
-				return nil
-			},
 		)
 	} else {
 		if u.state.promptMode == ExecPromptMode {
@@ -597,6 +598,14 @@ func (u *Ui) finishConfig() tea.Cmd {
 			)
 		}
 	}
+}
+
+func resolvePromptMode(current PromptMode, config *config.Config) PromptMode {
+	if current != DefaultPromptMode {
+		return current
+	}
+
+	return GetPromptModeFromString(config.GetUserConfig().GetDefaultPromptMode())
 }
 
 func (u *Ui) advanceConfig() tea.Cmd {
@@ -707,7 +716,12 @@ func (u *Ui) editSettings() tea.Cmd {
 		}
 
 		u.config = config
-		engine, error := ai.NewEngine(ai.ExecEngineMode, config)
+		engineMode := ai.ExecEngineMode
+		if u.state.promptMode == ChatPromptMode {
+			engineMode = ai.ChatEngineMode
+		}
+
+		engine, error := ai.NewEngine(engineMode, config)
 		if u.state.pipe != "" {
 			engine.SetPipe(u.state.pipe)
 		}
