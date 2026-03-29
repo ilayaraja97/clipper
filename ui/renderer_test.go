@@ -60,7 +60,9 @@ func testRenderHelp(t *testing.T) {
 
 func testRenderConfigMessage(t *testing.T) {
 	r := NewRenderer(glamour.WithAutoStyle())
-	output := r.RenderConfigMessage()
+	output := r.RenderConfigMessage("API key", "Enter the API key used to authenticate requests.", []string{
+		"- API key: `local`",
+	})
 	assert.NotEmpty(t, output, "Rendered config message should not be empty.")
 }
 

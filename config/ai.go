@@ -1,12 +1,21 @@
 package config
 
 const (
-	openai_key         = "OPENAI_KEY"
-	openai_model       = "OPENAI_MODEL"
-	openai_base_url    = "OPENAI_BASE_URL"
-	openai_proxy       = "OPENAI_PROXY"
-	openai_temperature = "OPENAI_TEMPERATURE"
-	openai_max_tokens  = "OPENAI_MAX_TOKENS"
+	key         = "KEY"
+	model       = "MODEL"
+	baseURL    = "BASE_URL"
+	proxy       = "PROXY"
+	temperature = "TEMPERATURE"
+	maxTokens  = "MAX_TOKENS"
+)
+
+const (
+	DefaultKey         = "local"
+	DefaultModel       = "gemma3n:e4b"
+	DefaultBaseURL     = "http://127.0.0.1:11434/v1"
+	DefaultProxy       = ""
+	DefaultTemperature = 0.2
+	DefaultMaxTokens   = 1000
 )
 
 type AiConfig struct {

@@ -17,7 +17,7 @@ And you can also give any supplementary preferences to fine tune your experience
 
 ## Installation
 
-To install `Clipper`, simply run:
+### macOS and Linux
 
 ```shell
 curl -sS https://raw.githubusercontent.com/ilayaraja97/clipper/main/install.sh | bash
@@ -26,30 +26,50 @@ curl -sS https://raw.githubusercontent.com/ilayaraja97/clipper/main/install.sh |
 - this will detect the proper binary to install for your machine
 - and upgrade to the latest stable version if already installed
 
-You can also install it from the [available releases](https://github.com/ilayaraja97/clipper/releases) from the GitHub repository.
+### Windows
 
-To uninstall `Clipper`, simply run the provided uninstallation script:
+In **PowerShell**:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/ilayaraja97/clipper/main/install.ps1).Content"
+```
+
+The Windows installer puts `clipper.exe` in `%LOCALAPPDATA%\Programs\clipper` and updates your user `PATH`. If you use **Git Bash**, you can run the same `install.sh` command as on Linux.
+
+You can also install a binary from the [available releases](https://github.com/ilayaraja97/clipper/releases) on GitHub.
+
+### Uninstall
+
+**macOS / Linux / Git Bash on Windows:**
 
 ```shell
 curl -sS https://raw.githubusercontent.com/ilayaraja97/clipper/main/uninstall.sh | bash
 ```
 
+**Windows (PowerShell):** 
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/ilayaraja97/clipper/main/uninstall.ps1).Content"
+```
+
+Or remove `%LOCALAPPDATA%\Programs\clipper\clipper.exe` and delete `%USERPROFILE%\.config\clipper.json`.
+
 ## Configuration
 
-At first run, `Clipper` will ask you to provide an [OpenAI API key](https://platform.openai.com/account/api-keys) (required to interact with **ChatGPT AI**).
+At first run, `Clipper` will ask you to set it up. You need to get the key and base url of the provider.
 
 It will then generate your configuration in the file `~/.config/clipper.json`, with the following structure:
 
 ```json
 {
-  "openai_key": "",       // OpenAI API key
-  "openai_model": "",    // OpenAI API model (default gpt-3.5-turbo)
-  "openai_base_url": "",              // OpenAI-compatible API base URL (default official OpenAI endpoint)
-  "openai_proxy": "",                 // OpenAI API proxy (default disabled)
-  "openai_temperature": 0.2,          // OpenAI API temperature (defaut 0.2)
-  "openai_max_tokens": 1000,          // OpenAI API max tokens (default 1000)
-  "user_default_prompt_mode": "exec", // user prefered prompt mode: "exec" (default) or "chat"
-  "user_preferences": ""              // user preferences, expressed in natural language (default none)
+  "key": "",
+  "model": "",
+  "base_url": "",
+  "proxy": "",
+  "temperature": 0.2,
+  "max_tokens": 1000,
+  "user_default_prompt_mode": "exec",
+  "user_preferences": ""
 }
 ```
 
@@ -63,23 +83,23 @@ Note that in `REPL` mode, you can press anytime `ctrl+s` to edit settings:
 
 ### Model 
 
-You can use the `openai_model` to configure the AI model you want to use. By default, the model `gpt-3.5-turbo` is used.
+You can use the `model` to configure the AI model you want to use.
 
 ```json
 {
-  "openai_model": "gpt-4"
+  "model": "gpt-4"
 }
 ```
 
-You can find the list of [supported models here](https://platform.openai.com/docs/models/model-endpoint-compatibility) (must be compatible with OpenAI API `v1/chat/completions`).
+Any model you choose must be compatible with OpenAI API `v1/chat/completions`.
 
 ### Base URL
 
-You can use `openai_base_url` if you want to send requests to an OpenAI-compatible endpoint instead of the default OpenAI API:
+You can use `base_url` if you want to send requests to an OpenAI-compatible endpoint instead of the default OpenAI API:
 
 ```json
 {
-  "openai_base_url": "https://openrouter.ai/api/v1"
+  "base_url": "https://openrouter.ai/api/v1"
 }
 ```
 

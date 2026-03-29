@@ -45,6 +45,7 @@ type Ui struct {
 	state      UiState
 	dimensions UiDimensions
 	components UiComponents
+	configFlow configFlow
 	config     *config.Config
 	engine     *ai.Engine
 	history    *history.History
@@ -77,7 +78,8 @@ func NewUi(input *UiInput) *Ui {
 			),
 			spinner: NewSpinner(),
 		},
-		history: history.NewHistory(),
+		configFlow: newConfigFlow(),
+		history:    history.NewHistory(),
 	}
 }
 
@@ -141,6 +143,17 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return u, tea.Quit
 		// history
 		case tea.KeyUp, tea.KeyDown:
+			if u.state.configuring {
+				u.configFlow.SetCurrentValue(u.components.prompt.GetValue())
+				if msg.Type == tea.KeyUp {
+					u.configFlow.Move(-1)
+				} else {
+					u.configFlow.Move(1)
+				}
+				u.refreshConfigScreen()
+
+				return u, textinput.Blink
+			}
 			if !u.state.querying && !u.state.confirming {
 				var input *string
 				if msg.Type == tea.KeyUp {
@@ -159,7 +172,7 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		// switch mode
 		case tea.KeyTab:
-			if !u.state.querying && !u.state.confirming {
+			if !u.state.querying && !u.state.confirming && !u.state.configuring {
 				if u.state.promptMode == ChatPromptMode {
 					u.state.promptMode = ExecPromptMode
 					u.components.prompt.SetMode(ExecPromptMode)
@@ -180,7 +193,7 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// enter
 		case tea.KeyEnter:
 			if u.state.configuring {
-				return u, u.finishConfig(u.components.prompt.GetValue())
+				return u, u.advanceConfig()
 			}
 			if !u.state.querying && !u.state.confirming {
 				input := u.components.prompt.GetValue()
@@ -507,25 +520,34 @@ func (u *Ui) startConfig() tea.Cmd {
 		u.state.confirming = false
 		u.state.executing = false
 
-		u.state.buffer = u.components.renderer.RenderConfigMessage()
 		u.state.command = ""
+		u.configFlow = newConfigFlow()
 		u.components.prompt = NewPrompt(ConfigPromptMode)
+		u.refreshConfigScreen()
 
 		return nil
 	}
 }
 
-func (u *Ui) finishConfig(key string) tea.Cmd {
+func (u *Ui) finishConfig() tea.Cmd {
 	u.state.configuring = false
 
-	config, err := config.WriteConfig(key, true)
+	config, err := config.WriteConfig(u.configFlow.Input(), true)
 	if err != nil {
-		u.state.error = err
-		return nil
+		u.state.configuring = true
+		u.refreshConfigScreen()
+		u.state.buffer += fmt.Sprintf("\n\n%s", u.components.renderer.RenderWarning(err.Error()))
+
+		return textinput.Blink
 	}
 
 	u.config = config
-	engine, err := ai.NewEngine(ai.ExecEngineMode, config)
+	engineMode := ai.ExecEngineMode
+	if u.state.promptMode == ChatPromptMode {
+		engineMode = ai.ChatEngineMode
+	}
+
+	engine, err := ai.NewEngine(engineMode, config)
 	if err != nil {
 		u.state.error = err
 		return nil
@@ -577,6 +599,27 @@ func (u *Ui) finishConfig(key string) tea.Cmd {
 	}
 }
 
+func (u *Ui) advanceConfig() tea.Cmd {
+	u.configFlow.SetCurrentValue(u.components.prompt.GetValue())
+	if u.configFlow.Next() {
+		u.refreshConfigScreen()
+
+		return textinput.Blink
+	}
+
+	return u.finishConfig()
+}
+
+func (u *Ui) refreshConfigScreen() {
+	field := u.configFlow.CurrentField()
+	u.state.buffer = u.components.renderer.RenderConfigMessage(
+		field.label,
+		field.description,
+		u.configFlow.ProgressLines(),
+	)
+	u.configFlow.ApplyToPrompt(u.components.prompt)
+}
+
 func (u *Ui) startExec(input string) tea.Cmd {
 	return func() tea.Msg {
 		u.state.querying = true
@@ -626,7 +669,7 @@ func (u *Ui) execCommand(input string) tea.Cmd {
 	u.state.confirming = false
 	u.state.executing = true
 
-	c := run.PrepareInteractiveCommand(input)
+	c := run.PrepareInteractiveCommand(u.config.GetSystemConfig().GetShell(), input)
 
 	return tea.ExecProcess(c, func(error error) tea.Msg {
 		u.state.executing = false
@@ -641,11 +684,14 @@ func (u *Ui) editSettings() tea.Cmd {
 	u.state.confirming = false
 	u.state.executing = true
 
-	c := run.PrepareEditSettingsCommand(fmt.Sprintf(
-		"%s %s",
-		u.config.GetSystemConfig().GetEditor(),
-		u.config.GetSystemConfig().GetConfigFile(),
-	))
+	c := run.PrepareEditSettingsCommand(
+		u.config.GetSystemConfig().GetShell(),
+		fmt.Sprintf(
+			"%s %s",
+			u.config.GetSystemConfig().GetEditor(),
+			u.config.GetSystemConfig().GetConfigFile(),
+		),
+	)
 
 	return tea.ExecProcess(c, func(error error) tea.Msg {
 		u.state.executing = false

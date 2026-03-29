@@ -12,7 +12,7 @@ const (
 	exec_icon          = "🚀 > "
 	exec_placeholder   = "Execute something..."
 	config_icon        = "🔒 > "
-	config_placeholder = "Enter your OpenAI key..."
+	config_placeholder = "..."
 	chat_icon          = "💬 > "
 	chat_placeholder   = "Ask me something..."
 )
@@ -27,10 +27,7 @@ func NewPrompt(mode PromptMode) *Prompt {
 	input.Placeholder = getPromptPlaceholder(mode)
 	input.TextStyle = getPromptStyle(mode)
 	input.Prompt = getPromptIcon(mode)
-
-	if mode == ConfigPromptMode {
-		input.EchoMode = textinput.EchoPassword
-	}
+	input.EchoMode = getPromptEchoMode(mode)
 
 	input.Focus()
 
@@ -50,6 +47,19 @@ func (p *Prompt) SetMode(mode PromptMode) *Prompt {
 	p.input.TextStyle = getPromptStyle(mode)
 	p.input.Prompt = getPromptIcon(mode)
 	p.input.Placeholder = getPromptPlaceholder(mode)
+	p.input.EchoMode = getPromptEchoMode(mode)
+
+	return p
+}
+
+func (p *Prompt) SetPlaceholder(value string) *Prompt {
+	p.input.Placeholder = value
+
+	return p
+}
+
+func (p *Prompt) SetEchoMode(mode textinput.EchoMode) *Prompt {
+	p.input.EchoMode = mode
 
 	return p
 }
@@ -126,4 +136,12 @@ func getPromptPlaceholder(mode PromptMode) string {
 	default:
 		return chat_placeholder
 	}
+}
+
+func getPromptEchoMode(mode PromptMode) textinput.EchoMode {
+	if mode == ConfigPromptMode {
+		return textinput.EchoPassword
+	}
+
+	return textinput.EchoNormal
 }
