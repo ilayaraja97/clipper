@@ -10,38 +10,22 @@ import (
 )
 
 func TestRun(t *testing.T) {
-	t.Run("RunCommand", testRunCommand)
-	t.Run("PrepareInteractiveCommand", testPrepareInteractiveCommand)
+	t.Run("RunInteractiveCommand", testRunInteractiveCommand)
 	t.Run("PrepareEditSettingsCommand", testPrepareEditSettingsCommand)
 }
 
-func testRunCommand(t *testing.T) {
-	command := "echo"
-	args := []string{"Hello, World!"}
-	expected := "Hello, World!\n"
-
+func testRunInteractiveCommand(t *testing.T) {
+	command := "printf 'Hello, World!'"
+	expected := "Hello, World!"
 	if runtime.GOOS == "windows" {
-		command = "cmd"
-		args = []string{"/C", "echo Hello, World!"}
+		command = "echo Hello, World!"
 		expected = "Hello, World!\r\n"
 	}
 
-	output, err := RunCommand(command, args...)
+	output, err := RunInteractiveCommand(defaultShellForTests(), command)
 	require.NoError(t, err)
 
-	assert.Equal(t, expected, output, "The command output should be the same.")
-}
-
-func testPrepareInteractiveCommand(t *testing.T) {
-	cmd := PrepareInteractiveCommand("bash", "echo 'Hello, World!'")
-
-	expectedCmd := exec.Command(
-		"bash",
-		"-c",
-		"echo \"\n\";echo 'Hello, World!'; echo \"\n\";",
-	)
-
-	assert.Equal(t, expectedCmd.Args, cmd.Args, "The command arguments should be the same.")
+	assert.Equal(t, expected, output, "The interactive command output should be captured.")
 }
 
 func testPrepareEditSettingsCommand(t *testing.T) {
@@ -56,15 +40,10 @@ func testPrepareEditSettingsCommand(t *testing.T) {
 	assert.Equal(t, expectedCmd.Args, cmd.Args, "The command arguments should be the same.")
 }
 
-func TestPrepareInteractiveCommandPowerShell(t *testing.T) {
-	cmd := PrepareInteractiveCommand("powershell", "Get-NetIPConfiguration")
+func defaultShellForTests() string {
+	if runtime.GOOS == "windows" {
+		return "cmd"
+	}
 
-	expectedCmd := exec.Command(
-		"powershell",
-		"-NoProfile",
-		"-Command",
-		"Write-Host \"\"; Get-NetIPConfiguration; Write-Host \"\"",
-	)
-
-	assert.Equal(t, expectedCmd.Args, cmd.Args, "The PowerShell command arguments should be the same.")
+	return "bash"
 }

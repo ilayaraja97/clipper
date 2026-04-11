@@ -6,13 +6,15 @@ type RunOutput struct {
 	error          error
 	errorMessage   string
 	successMessage string
+	content        string
 }
 
-func NewRunOutput(error error, errorMessage string, successMessage string) RunOutput {
+func NewRunOutput(error error, errorMessage string, successMessage string, content string) RunOutput {
 	return RunOutput{
 		error:          error,
 		errorMessage:   errorMessage,
 		successMessage: successMessage,
+		content:        content,
 	}
 }
 
@@ -26,4 +28,8 @@ func (o RunOutput) GetErrorMessage() string {
 
 func (o RunOutput) GetSuccessMessage() string {
 	return o.successMessage
+}
+
+func (o RunOutput) GetContent() string {
+	return o.content
 }

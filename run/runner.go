@@ -7,39 +7,9 @@ import (
 	"strings"
 )
 
-func RunCommand(cmd string, arg ...string) (string, error) {
-	out, err := exec.Command(cmd, arg...).Output()
-	if err != nil {
-		return fmt.Sprintf("error: %v", err), err
-	}
-
-	return string(out), nil
-}
-
-func PrepareInteractiveCommand(shell, input string) *exec.Cmd {
-	command := strings.TrimSpace(strings.TrimRight(input, ";"))
-
-	switch getShellKind(shell) {
-	case "powershell":
-		return exec.Command(
-			shell,
-			"-NoProfile",
-			"-Command",
-			fmt.Sprintf("Write-Host \"\"; %s; Write-Host \"\"", command),
-		)
-	case "cmd":
-		return exec.Command(
-			shell,
-			"/C",
-			fmt.Sprintf("echo. && %s && echo.", command),
-		)
-	default:
-		return exec.Command(
-			shell,
-			"-c",
-			fmt.Sprintf("echo \"\n\";%s; echo \"\n\";", command),
-		)
-	}
+func RunInteractiveCommand(shell, input string) (string, error) {
+	out, err := prepareRawShellCommand(shell, input).CombinedOutput()
+	return string(out), err
 }
 
 func PrepareEditSettingsCommand(shell, input string) *exec.Cmd {
@@ -64,6 +34,32 @@ func PrepareEditSettingsCommand(shell, input string) *exec.Cmd {
 			shell,
 			"-c",
 			fmt.Sprintf("%s; echo \"\n\";", command),
+		)
+	}
+}
+
+func prepareRawShellCommand(shell, input string) *exec.Cmd {
+	command := strings.TrimSpace(strings.TrimRight(input, ";"))
+
+	switch getShellKind(shell) {
+	case "powershell":
+		return exec.Command(
+			shell,
+			"-NoProfile",
+			"-Command",
+			command,
+		)
+	case "cmd":
+		return exec.Command(
+			shell,
+			"/C",
+			command,
+		)
+	default:
+		return exec.Command(
+			shell,
+			"-c",
+			command,
 		)
 	}
 }
