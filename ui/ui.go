@@ -182,7 +182,6 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					u.components.prompt.SetMode(ChatPromptMode)
 					u.engine.SetMode(ai.ChatEngineMode)
 				}
-				u.engine.Reset()
 				u.components.prompt, promptCmd = u.components.prompt.Update(msg)
 				cmds = append(
 					cmds,
@@ -371,9 +370,24 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		u.state.querying = false
 		u.components.prompt, promptCmd = u.components.prompt.Update(msg)
 		u.components.prompt.Focus()
-		output := u.components.renderer.RenderSuccess(fmt.Sprintf("\n%s\n", msg.GetSuccessMessage()))
+		output := strings.TrimSpace(msg.GetContent())
+		if output != "" {
+			output = u.components.renderer.RenderContent(output)
+		}
 		if msg.HasError() {
-			output = u.components.renderer.RenderError(fmt.Sprintf("\n%s\n", msg.GetErrorMessage()))
+			errOutput := u.components.renderer.RenderError(fmt.Sprintf("\n%s\n", msg.GetErrorMessage()))
+			if output != "" {
+				output = fmt.Sprintf("%s\n%s", output, errOutput)
+			} else {
+				output = errOutput
+			}
+		} else if msg.GetSuccessMessage() != "" {
+			successOutput := u.components.renderer.RenderSuccess(fmt.Sprintf("\n%s\n", msg.GetSuccessMessage()))
+			if output != "" {
+				output = fmt.Sprintf("%s\n%s", output, successOutput)
+			} else {
+				output = successOutput
+			}
 		}
 		if u.state.runMode == CliMode {
 			return u, tea.Sequence(
@@ -676,14 +690,23 @@ func (u *Ui) execCommand(input string) tea.Cmd {
 	u.state.confirming = false
 	u.state.executing = true
 
-	c := run.PrepareInteractiveCommand(u.config.GetSystemConfig().GetShell(), input)
-
-	return tea.ExecProcess(c, func(error error) tea.Msg {
+	return func() tea.Msg {
+		output, error := run.RunInteractiveCommand(u.config.GetSystemConfig().GetShell(), input)
 		u.state.executing = false
 		u.state.command = ""
+		if u.state.runMode == ReplMode {
+			content := strings.TrimSpace(output)
+			if content == "" {
+				content = "[no output]"
+			}
 
-		return run.NewRunOutput(error, "[error]", "[ok]")
-	})
+			u.engine.AppendFunctionMessage(
+				fmt.Sprintf("Command: %s\nOutput:\n%s", input, content),
+			)
+		}
+
+		return run.NewRunOutput(error, "[error]", "[ok]", output)
+	}
 }
 
 func (u *Ui) editSettings() tea.Cmd {
@@ -705,12 +728,12 @@ func (u *Ui) editSettings() tea.Cmd {
 		u.state.command = ""
 
 		if error != nil {
-			return run.NewRunOutput(error, "[settings error]", "")
+			return run.NewRunOutput(error, "[settings error]", "", "")
 		}
 
 		config, error := config.NewConfig()
 		if error != nil {
-			return run.NewRunOutput(error, "[settings error]", "")
+			return run.NewRunOutput(error, "[settings error]", "", "")
 		}
 
 		u.config = config
@@ -724,10 +747,10 @@ func (u *Ui) editSettings() tea.Cmd {
 			engine.SetPipe(u.state.pipe)
 		}
 		if error != nil {
-			return run.NewRunOutput(error, "[settings error]", "")
+			return run.NewRunOutput(error, "[settings error]", "", "")
 		}
 		u.engine = engine
 
-		return run.NewRunOutput(nil, "", "[settings ok]")
+		return run.NewRunOutput(nil, "", "[settings ok]", "")
 	})
 }

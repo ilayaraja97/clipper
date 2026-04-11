@@ -20,14 +20,13 @@ import (
 const noexec = "[noexec]"
 
 type Engine struct {
-	mode         EngineMode
-	config       *config.Config
-	client       llms.Model
-	execMessages []llms.MessageContent
-	chatMessages []llms.MessageContent
-	channel      chan EngineChatStreamOutput
-	pipe         string
-	running      bool
+	mode     EngineMode
+	config   *config.Config
+	client   llms.Model
+	messages []llms.MessageContent
+	channel  chan EngineChatStreamOutput
+	pipe     string
+	running  bool
 }
 
 func NewEngine(mode EngineMode, config *config.Config) (*Engine, error) {
@@ -59,14 +58,13 @@ func NewEngine(mode EngineMode, config *config.Config) (*Engine, error) {
 	}
 
 	return &Engine{
-		mode:         mode,
-		config:       config,
-		client:       client,
-		execMessages: make([]llms.MessageContent, 0),
-		chatMessages: make([]llms.MessageContent, 0),
-		channel:      make(chan EngineChatStreamOutput),
-		pipe:         "",
-		running:      false,
+		mode:     mode,
+		config:   config,
+		client:   client,
+		messages: make([]llms.MessageContent, 0),
+		channel:  make(chan EngineChatStreamOutput),
+		pipe:     "",
+		running:  false,
 	}, nil
 }
 
@@ -103,19 +101,8 @@ func (e *Engine) Interrupt() *Engine {
 	return e
 }
 
-func (e *Engine) Clear() *Engine {
-	if e.mode == ExecEngineMode {
-		e.execMessages = []llms.MessageContent{}
-	} else {
-		e.chatMessages = []llms.MessageContent{}
-	}
-
-	return e
-}
-
 func (e *Engine) Reset() *Engine {
-	e.execMessages = []llms.MessageContent{}
-	e.chatMessages = []llms.MessageContent{}
+	e.messages = []llms.MessageContent{}
 
 	return e
 }
@@ -220,21 +207,19 @@ func (e *Engine) ChatStreamCompletion(input string) error {
 }
 
 func (e *Engine) appendUserMessage(content string) *Engine {
-	if e.mode == ExecEngineMode {
-		e.execMessages = append(e.execMessages, llms.TextParts(llms.ChatMessageTypeHuman, content))
-	} else {
-		e.chatMessages = append(e.chatMessages, llms.TextParts(llms.ChatMessageTypeHuman, content))
-	}
+	e.messages = append(e.messages, llms.TextParts(llms.ChatMessageTypeHuman, content))
 
 	return e
 }
 
 func (e *Engine) appendAssistantMessage(content string) *Engine {
-	if e.mode == ExecEngineMode {
-		e.execMessages = append(e.execMessages, llms.TextParts(llms.ChatMessageTypeAI, content))
-	} else {
-		e.chatMessages = append(e.chatMessages, llms.TextParts(llms.ChatMessageTypeAI, content))
-	}
+	e.messages = append(e.messages, llms.TextParts(llms.ChatMessageTypeAI, content))
+
+	return e
+}
+
+func (e *Engine) AppendFunctionMessage(content string) *Engine {
+	e.messages = append(e.messages, llms.TextParts(llms.ChatMessageTypeFunction, content))
 
 	return e
 }
@@ -251,11 +236,7 @@ func (e *Engine) prepareCompletionMessages() []llms.MessageContent {
 		)
 	}
 
-	if e.mode == ExecEngineMode {
-		messages = append(messages, e.execMessages...)
-	} else {
-		messages = append(messages, e.chatMessages...)
-	}
+	messages = append(messages, e.messages...)
 
 	return messages
 }
