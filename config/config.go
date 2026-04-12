@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ilayaraja97/clipper/logger"
 	"github.com/ilayaraja97/clipper/system"
 	"github.com/spf13/viper"
 )
@@ -44,9 +45,17 @@ func NewConfig() (*Config, error) {
 	viper.SetConfigName(strings.ToLower(system.GetApplicationName()))
 	viper.AddConfigPath(filepath.Join(system.GetHomeDirectory(), ".config"))
 
+	logger.Log.Debug().Str("configPath", filepath.Join(system.GetHomeDirectory(), ".config", strings.ToLower(system.GetApplicationName()))).Msg("loading config")
+
 	if err := viper.ReadInConfig(); err != nil {
+		logger.Log.Debug().Err(err).Msg("failed to read config")
 		return nil, err
 	}
+
+	logger.Log.Info().
+		Str("model", viper.GetString(model)).
+		Str("baseURL", viper.GetString(baseURL)).
+		Msg("config loaded")
 
 	return &Config{
 		ai: AiConfig{
@@ -117,12 +126,16 @@ func WriteConfig(input ConfigInput, write bool) (*Config, error) {
 
 	if write {
 		cfgPath := system.GetConfigFile()
+		logger.Log.Info().Str("configPath", cfgPath).Msg("writing config")
 		if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+			logger.Log.Error().Err(err).Msg("failed to create config directory")
 			return nil, err
 		}
 		if err := viper.SafeWriteConfigAs(cfgPath); err != nil {
+			logger.Log.Error().Err(err).Msg("failed to write config file")
 			return nil, err
 		}
+		logger.Log.Info().Msg("config written successfully")
 	}
 
 	return NewConfig()

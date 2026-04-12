@@ -1,5 +1,7 @@
 package history
 
+const maxHistorySize = 100
+
 type History struct {
 	inputs map[int]string
 	cursor int
@@ -20,10 +22,28 @@ func (h *History) Reset() *History {
 }
 
 func (h *History) Add(input string) *History {
+	if len(h.inputs) >= maxHistorySize {
+		h.pruneOldest()
+	}
 	h.cursor = len(h.inputs)
 	h.inputs[h.cursor] = input
 
 	return h
+}
+
+func (h *History) pruneOldest() {
+	if len(h.inputs) == 0 {
+		return
+	}
+	lowestKey := 0
+	newInputs := make(map[int]string)
+	offset := lowestKey + 1
+	for k, v := range h.inputs {
+		if k != lowestKey {
+			newInputs[k-offset] = v
+		}
+	}
+	h.inputs = newInputs
 }
 
 func (h *History) GetAll() map[int]string {
