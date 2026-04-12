@@ -703,7 +703,7 @@ func (u *Ui) execCommand(input string) tea.Cmd {
 				content = "[no output]"
 			}
 
-			u.engine.AppendFunctionMessage(
+			u.engine.AppendAssistantMessage(
 				fmt.Sprintf("Command: %s\nOutput:\n%s", input, content),
 			)
 		}

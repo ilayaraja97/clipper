@@ -270,10 +270,8 @@ func (e *Engine) appendAssistantMessage(content string) *Engine {
 	return e
 }
 
-func (e *Engine) AppendFunctionMessage(content string) *Engine {
-	e.messages = append(e.messages, llms.TextParts(llms.ChatMessageTypeFunction, content))
-
-	return e
+func (e *Engine) AppendAssistantMessage(content string) *Engine {
+	return e.appendAssistantMessage(content)
 }
 
 func (e *Engine) prepareCompletionMessages() []llms.MessageContent {

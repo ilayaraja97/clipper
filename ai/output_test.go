@@ -56,19 +56,6 @@ func TestEngineChatStreamOutputIsExecutable(t *testing.T) {
 	assert.True(t, result)
 }
 
-func TestAppendFunctionMessageUsesFunctionRole(t *testing.T) {
-	engine := &Engine{
-		mode:     ExecEngineMode,
-		messages: make([]llms.MessageContent, 0),
-	}
-
-	engine.AppendFunctionMessage("Command: ls\nOutput:\nfile.txt")
-
-	if assert.Len(t, engine.messages, 1) {
-		assert.Equal(t, llms.ChatMessageTypeFunction, engine.messages[0].Role)
-	}
-}
-
 func TestReset(t *testing.T) {
 	engine := &Engine{
 		messages: []llms.MessageContent{
@@ -125,14 +112,14 @@ func TestMessageAccumulation(t *testing.T) {
 
 	engine.appendUserMessage("first")
 	engine.appendAssistantMessage("response1")
-	engine.AppendFunctionMessage("Command: ls")
+	engine.AppendAssistantMessage("Command: ls\nOutput:\nfile.txt")
 	engine.appendUserMessage("second")
 	engine.appendAssistantMessage("response2")
 
 	assert.Len(t, engine.messages, 5)
 	assert.Equal(t, llms.ChatMessageTypeHuman, engine.messages[0].Role)
 	assert.Equal(t, llms.ChatMessageTypeAI, engine.messages[1].Role)
-	assert.Equal(t, llms.ChatMessageTypeFunction, engine.messages[2].Role)
+	assert.Equal(t, llms.ChatMessageTypeAI, engine.messages[2].Role)
 	assert.Equal(t, llms.ChatMessageTypeHuman, engine.messages[3].Role)
 	assert.Equal(t, llms.ChatMessageTypeAI, engine.messages[4].Role)
 }
