@@ -10,8 +10,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
-var Log zerolog.Logger
-var logFilePath string
+var (
+	Log         zerolog.Logger
+	logFilePath string
+)
 
 func Init(sessionID string) {
 	logDir := filepath.Join(getLogDir(), "clipper")
