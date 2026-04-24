@@ -8,6 +8,8 @@ permalink: /usage/
 
 > CLI mode is made to be integrated in your command lines workflow.
 
+The commands below work the same way whether you use OpenAI directly or an OpenAI-compatible provider such as OpenRouter.
+
 You can perform a single run:
 
 ```shell
@@ -38,9 +40,13 @@ Or even:
 cat error.log | clipper -c explain what is wrong here
 ```
 
+You can change `model`, `base_url`, or both in your configuration without changing your terminal workflow.
+
 ## REPL mode
 
 > REPL mode is made to work in an interactive way.
+
+This is a convenient way to try different models and providers while keeping the same interactive experience.
 
 Just run:
 
