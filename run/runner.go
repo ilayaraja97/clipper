@@ -5,10 +5,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/ilayaraja97/clipper/logger"
 )
 
 func RunInteractiveCommand(shell, input string) (string, error) {
 	out, err := prepareRawShellCommand(shell, input).CombinedOutput()
+	if err != nil {
+		logger.Log.Debug().Err(err).Str("shell", shell).Str("command", input).Msg("command failed")
+	} else {
+		logger.Log.Debug().Str("shell", shell).Str("command", input).Msg("command succeeded")
+	}
 	return string(out), err
 }
 

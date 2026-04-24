@@ -9,13 +9,17 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/ilayaraja97/clipper/config"
+	"github.com/ilayaraja97/clipper/logger"
 	"github.com/ilayaraja97/clipper/system"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 )
+
+const requestTimeout = 60 * time.Second
 
 const noexec = "[noexec]"
 
@@ -30,16 +34,21 @@ type Engine struct {
 }
 
 func NewEngine(mode EngineMode, config *config.Config) (*Engine, error) {
+	logger.Log.Debug().Str("mode", mode.String()).Msg("creating AI engine")
+
 	opts := []openai.Option{
 		openai.WithToken(config.GetAiConfig().GetKey()),
 	}
 	if config.GetAiConfig().GetBaseURL() != "" {
+		logger.Log.Debug().Str("baseURL", config.GetAiConfig().GetBaseURL()).Msg("using custom base URL")
 		opts = append(opts, openai.WithBaseURL(config.GetAiConfig().GetBaseURL()))
 	}
 
 	if config.GetAiConfig().GetProxy() != "" {
+		logger.Log.Debug().Str("proxy", config.GetAiConfig().GetProxy()).Msg("using proxy")
 		proxyUrl, err := url.Parse(config.GetAiConfig().GetProxy())
 		if err != nil {
+			logger.Log.Error().Err(err).Msg("failed to parse proxy URL")
 			return nil, err
 		}
 
@@ -54,8 +63,11 @@ func NewEngine(mode EngineMode, config *config.Config) (*Engine, error) {
 	}
 	client, err := openai.New(opts...)
 	if err != nil {
+		logger.Log.Error().Err(err).Msg("failed to create OpenAI client")
 		return nil, err
 	}
+
+	logger.Log.Info().Str("mode", mode.String()).Msg("AI engine created")
 
 	return &Engine{
 		mode:     mode,
@@ -108,7 +120,9 @@ func (e *Engine) Reset() *Engine {
 }
 
 func (e *Engine) ExecCompletion(input string) (*EngineExecOutput, error) {
-	ctx := context.Background()
+	logger.Log.Debug().Str("input", input).Msg("executing completion")
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
 
 	e.running = true
 
@@ -122,9 +136,15 @@ func (e *Engine) ExecCompletion(input string) (*EngineExecOutput, error) {
 		llms.WithTemperature(e.config.GetAiConfig().GetTemperature()),
 	)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			logger.Log.Error().Msg("completion request timed out")
+			return nil, fmt.Errorf("request timed out after %v", requestTimeout)
+		}
+		logger.Log.Error().Err(err).Msg("completion request failed")
 		return nil, err
 	}
 	if len(resp.Choices) == 0 {
+		logger.Log.Warn().Msg("empty response from model")
 		return nil, fmt.Errorf("empty response from model")
 	}
 
@@ -134,14 +154,17 @@ func (e *Engine) ExecCompletion(input string) (*EngineExecOutput, error) {
 	var output EngineExecOutput
 	err = json.Unmarshal([]byte(content), &output)
 	if err != nil {
+		logger.Log.Debug().Str("content", content).Msg("JSON unmarshal failed, trying regex extraction")
 		re := regexp.MustCompile(`\{.*?\}`)
 		match := re.FindString(content)
 		if match != "" {
 			err = json.Unmarshal([]byte(match), &output)
 			if err != nil {
+				logger.Log.Error().Err(err).Msg("failed to extract JSON from content")
 				return nil, err
 			}
 		} else {
+			logger.Log.Debug().Msg("no JSON found in response, using raw content")
 			output = EngineExecOutput{
 				Command:     "",
 				Explanation: content,
@@ -150,11 +173,19 @@ func (e *Engine) ExecCompletion(input string) (*EngineExecOutput, error) {
 		}
 	}
 
+	logger.Log.Debug().
+		Bool("executable", output.IsExecutable()).
+		Str("cmd", output.GetCommand()).
+		Str("exp", output.GetExplanation()).
+		Msg("completion result")
+
 	return &output, nil
 }
 
 func (e *Engine) ChatStreamCompletion(input string) error {
-	ctx := context.Background()
+	logger.Log.Debug().Str("input", input).Msg("starting chat stream completion")
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
 
 	e.running = true
 
@@ -169,7 +200,16 @@ func (e *Engine) ChatStreamCompletion(input string) error {
 		llms.WithTemperature(e.config.GetAiConfig().GetTemperature()),
 		llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
 			if !e.running {
+				logger.Log.Debug().Msg("stream interrupted by user")
+				cancel()
 				return context.Canceled
+			}
+
+			select {
+			case <-ctx.Done():
+				logger.Log.Debug().Msg("stream timed out")
+				return ctx.Err()
+			default:
 			}
 
 			delta := string(chunk)
@@ -183,7 +223,14 @@ func (e *Engine) ChatStreamCompletion(input string) error {
 			return nil
 		}),
 	)
+
 	if err != nil && !errors.Is(err, context.Canceled) {
+		if ctx.Err() == context.DeadlineExceeded {
+			logger.Log.Error().Msg("chat stream request timed out")
+			e.running = false
+			return fmt.Errorf("request timed out after %v", requestTimeout)
+		}
+		logger.Log.Error().Err(err).Msg("chat stream request failed")
 		e.running = false
 		return err
 	}
@@ -194,6 +241,11 @@ func (e *Engine) ChatStreamCompletion(input string) error {
 			executable = true
 		}
 	}
+
+	logger.Log.Debug().
+		Str("output", output).
+		Bool("executable", executable).
+		Msg("chat stream completed")
 
 	e.channel <- EngineChatStreamOutput{
 		content:    "",
@@ -218,10 +270,8 @@ func (e *Engine) appendAssistantMessage(content string) *Engine {
 	return e
 }
 
-func (e *Engine) AppendFunctionMessage(content string) *Engine {
-	e.messages = append(e.messages, llms.TextParts(llms.ChatMessageTypeFunction, content))
-
-	return e
+func (e *Engine) AppendAssistantMessage(content string) *Engine {
+	return e.appendAssistantMessage(content)
 }
 
 func (e *Engine) prepareCompletionMessages() []llms.MessageContent {

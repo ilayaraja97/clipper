@@ -7,6 +7,7 @@ import (
 	"github.com/ilayaraja97/clipper/ai"
 	"github.com/ilayaraja97/clipper/config"
 	"github.com/ilayaraja97/clipper/history"
+	"github.com/ilayaraja97/clipper/logger"
 	"github.com/ilayaraja97/clipper/run"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -15,6 +16,14 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/spf13/viper"
 )
+
+type execErrorMsg struct {
+	err error
+}
+
+type chatErrorMsg struct {
+	err error
+}
 
 type UiState struct {
 	error       error
@@ -74,7 +83,7 @@ func NewUi(input *UiInput) *Ui {
 			prompt: NewPrompt(input.GetPromptMode()),
 			renderer: NewRenderer(
 				glamour.WithAutoStyle(),
-				glamour.WithWordWrap(150),
+				glamour.WithWordWrap(0),
 			),
 			spinner: NewSpinner(),
 		},
@@ -84,9 +93,13 @@ func NewUi(input *UiInput) *Ui {
 }
 
 func (u *Ui) Init() tea.Cmd {
+	logger.Log.Debug().Str("runMode", u.state.runMode.String()).Str("promptMode", u.state.promptMode.String()).Msg("initializing UI")
+
 	config, err := config.NewConfig()
 	if err != nil {
+		logger.Log.Debug().Err(err).Msg("config error")
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			logger.Log.Info().Msg("no config file found, starting configuration")
 			if u.state.runMode == ReplMode {
 				return tea.Sequence(
 					tea.ClearScreen,
@@ -96,12 +109,15 @@ func (u *Ui) Init() tea.Cmd {
 				return u.startConfig()
 			}
 		} else {
+			logger.Log.Error().Err(err).Msg("failed to load config")
 			return tea.Sequence(
 				tea.Println(u.components.renderer.RenderError(err.Error())),
 				tea.Quit,
 			)
 		}
 	}
+
+	logger.Log.Debug().Str("runMode", u.state.runMode.String()).Msg("config loaded successfully")
 
 	if u.state.runMode == ReplMode {
 		return u.startRepl(config)
@@ -111,216 +127,21 @@ func (u *Ui) Init() tea.Cmd {
 }
 
 func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var (
-		cmds       []tea.Cmd
-		promptCmd  tea.Cmd
-		spinnerCmd tea.Cmd
-	)
-
 	switch msg := msg.(type) {
-	// spinner
 	case spinner.TickMsg:
 		if u.state.querying {
-			u.components.spinner, spinnerCmd = u.components.spinner.Update(msg)
-			cmds = append(
-				cmds,
-				spinnerCmd,
-			)
+			spinner, cmd := u.components.spinner.Update(msg)
+			u.components.spinner = spinner
+			return u, cmd
 		}
-	// size
+
 	case tea.WindowSizeMsg:
 		u.dimensions.width = msg.Width
 		u.dimensions.height = msg.Height
-		u.components.renderer = NewRenderer(
-			glamour.WithAutoStyle(),
-			glamour.WithWordWrap(u.dimensions.width),
-		)
-	// keyboard
+
 	case tea.KeyMsg:
-		switch msg.Type {
-		// quit
-		case tea.KeyCtrlC:
-			return u, tea.Quit
-		// history
-		case tea.KeyUp, tea.KeyDown:
-			if u.state.configuring {
-				u.configFlow.SetCurrentValue(u.components.prompt.GetValue())
-				if msg.Type == tea.KeyUp {
-					u.configFlow.Move(-1)
-				} else {
-					u.configFlow.Move(1)
-				}
-				u.refreshConfigScreen()
+		return u.handleKeyPress(msg)
 
-				return u, textinput.Blink
-			}
-			if !u.state.querying && !u.state.confirming {
-				var input *string
-				if msg.Type == tea.KeyUp {
-					input = u.history.GetPrevious()
-				} else {
-					input = u.history.GetNext()
-				}
-				if input != nil {
-					u.components.prompt.SetValue(*input)
-					u.components.prompt, promptCmd = u.components.prompt.Update(msg)
-					cmds = append(
-						cmds,
-						promptCmd,
-					)
-				}
-			}
-		// switch mode
-		case tea.KeyTab:
-			if !u.state.querying && !u.state.confirming && !u.state.configuring {
-				if u.state.promptMode == ChatPromptMode {
-					u.state.promptMode = ExecPromptMode
-					u.components.prompt.SetMode(ExecPromptMode)
-					u.engine.SetMode(ai.ExecEngineMode)
-				} else {
-					u.state.promptMode = ChatPromptMode
-					u.components.prompt.SetMode(ChatPromptMode)
-					u.engine.SetMode(ai.ChatEngineMode)
-				}
-				u.components.prompt, promptCmd = u.components.prompt.Update(msg)
-				cmds = append(
-					cmds,
-					promptCmd,
-					textinput.Blink,
-				)
-			}
-		// enter
-		case tea.KeyEnter:
-			if u.state.configuring {
-				return u, u.advanceConfig()
-			}
-			if !u.state.querying && !u.state.confirming {
-				input := u.components.prompt.GetValue()
-				if input != "" {
-					inputPrint := u.components.prompt.AsString()
-					u.history.Add(input)
-					u.components.prompt.SetValue("")
-					u.components.prompt.Blur()
-					u.components.prompt, promptCmd = u.components.prompt.Update(msg)
-					if u.state.promptMode == ChatPromptMode {
-						cmds = append(
-							cmds,
-							promptCmd,
-							tea.Println(inputPrint),
-							u.startChatStream(input),
-							u.awaitChatStream(),
-						)
-					} else {
-						cmds = append(
-							cmds,
-							promptCmd,
-							tea.Println(inputPrint),
-							u.startExec(input),
-							u.components.spinner.Tick,
-						)
-					}
-				}
-			}
-
-		// help
-		case tea.KeyCtrlH:
-			if !u.state.configuring && !u.state.querying && !u.state.confirming {
-				u.components.prompt, promptCmd = u.components.prompt.Update(msg)
-				cmds = append(
-					cmds,
-					promptCmd,
-					tea.Println(u.components.renderer.RenderContent(u.components.renderer.RenderHelpMessage())),
-					textinput.Blink,
-				)
-			}
-
-		// clear
-		case tea.KeyCtrlL:
-			if !u.state.querying && !u.state.confirming {
-				u.components.prompt, promptCmd = u.components.prompt.Update(msg)
-				cmds = append(
-					cmds,
-					promptCmd,
-					tea.ClearScreen,
-					textinput.Blink,
-				)
-			}
-
-		// reset
-		case tea.KeyCtrlR:
-			if !u.state.querying && !u.state.confirming {
-				u.history.Reset()
-				u.engine.Reset()
-				u.components.prompt.SetValue("")
-				u.components.prompt, promptCmd = u.components.prompt.Update(msg)
-				cmds = append(
-					cmds,
-					promptCmd,
-					tea.ClearScreen,
-					textinput.Blink,
-				)
-			}
-
-		// edit settings
-		case tea.KeyCtrlS:
-			if !u.state.querying && !u.state.confirming && !u.state.configuring && !u.state.executing {
-				u.state.executing = true
-				u.state.buffer = ""
-				u.state.command = ""
-				u.components.prompt.Blur()
-				u.components.prompt, promptCmd = u.components.prompt.Update(msg)
-				cmds = append(
-					cmds,
-					promptCmd,
-					u.editSettings(),
-				)
-			}
-
-		default:
-			if u.state.confirming {
-				if strings.ToLower(msg.String()) == "y" {
-					u.state.confirming = false
-					u.state.executing = true
-					u.state.buffer = ""
-					u.components.prompt.SetValue("")
-					return u, tea.Sequence(
-						promptCmd,
-						u.execCommand(u.state.command),
-					)
-				} else {
-					u.state.confirming = false
-					u.state.executing = false
-					u.state.buffer = ""
-					u.components.prompt, promptCmd = u.components.prompt.Update(msg)
-					u.components.prompt.SetValue("")
-					u.components.prompt.Focus()
-					if u.state.runMode == ReplMode {
-						cmds = append(
-							cmds,
-							promptCmd,
-							tea.Println(fmt.Sprintf("\n%s\n", u.components.renderer.RenderWarning("[cancel]"))),
-							textinput.Blink,
-						)
-					} else {
-						return u, tea.Sequence(
-							promptCmd,
-							tea.Println(fmt.Sprintf("\n%s\n", u.components.renderer.RenderWarning("[cancel]"))),
-							tea.Quit,
-						)
-					}
-				}
-				u.state.command = ""
-			} else {
-				u.components.prompt.Focus()
-				u.components.prompt, promptCmd = u.components.prompt.Update(msg)
-				cmds = append(
-					cmds,
-					promptCmd,
-					textinput.Blink,
-				)
-			}
-		}
-	// engine exec feedback
 	case ai.EngineExecOutput:
 		var output string
 		if msg.IsExecutable() {
@@ -333,42 +154,29 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			output = u.components.renderer.RenderContent(msg.GetExplanation())
 			u.components.prompt.Focus()
 			if u.state.runMode == CliMode {
-				return u, tea.Sequence(
-					tea.Println(output),
-					tea.Quit,
-				)
+				return u, tea.Sequence(tea.Println(output), tea.Quit)
 			}
 		}
-		u.components.prompt, promptCmd = u.components.prompt.Update(msg)
-		return u, tea.Sequence(
-			promptCmd,
-			textinput.Blink,
-			tea.Println(output),
-		)
-	// engine chat stream feedback
+		prompt, cmd := u.components.prompt.Update(msg)
+		u.components.prompt = prompt
+		return u, tea.Sequence(cmd, textinput.Blink, tea.Println(output))
+
 	case ai.EngineChatStreamOutput:
 		if msg.IsLast() {
 			output := u.components.renderer.RenderContent(u.state.buffer)
 			u.state.buffer = ""
 			u.components.prompt.Focus()
 			if u.state.runMode == CliMode {
-				return u, tea.Sequence(
-					tea.Println(output),
-					tea.Quit,
-				)
-			} else {
-				return u, tea.Sequence(
-					tea.Println(output),
-					textinput.Blink,
-				)
+				return u, tea.Sequence(tea.Println(output), tea.Quit)
 			}
-		} else {
-			return u, u.awaitChatStream()
+			return u, tea.Sequence(tea.Println(output), textinput.Blink)
 		}
-	// runner feedback
+		return u, u.awaitChatStream()
+
 	case run.RunOutput:
 		u.state.querying = false
-		u.components.prompt, promptCmd = u.components.prompt.Update(msg)
+		prompt, cmd := u.components.prompt.Update(msg)
+		u.components.prompt = prompt
 		u.components.prompt.Focus()
 		output := strings.TrimSpace(msg.GetContent())
 		if output != "" {
@@ -390,37 +198,52 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if u.state.runMode == CliMode {
-			return u, tea.Sequence(
-				tea.Println(output),
-				tea.Quit,
-			)
-		} else {
-			return u, tea.Sequence(
-				tea.Println(output),
-				promptCmd,
-				textinput.Blink,
-			)
+			return u, tea.Sequence(tea.Println(output), tea.Quit)
 		}
-	// errors
+		return u, tea.Sequence(tea.Println(output), cmd, textinput.Blink)
+
+	case execErrorMsg:
+		u.state.querying = false
+		u.components.prompt.Focus()
+		errOutput := u.components.renderer.RenderError(fmt.Sprintf("\nexec error: %s\n", msg.err.Error()))
+		if u.state.runMode == CliMode {
+			return u, tea.Sequence(tea.Println(errOutput), tea.Quit)
+		}
+		return u, tea.Sequence(tea.Println(errOutput), textinput.Blink)
+
+	case chatErrorMsg:
+		u.state.querying = false
+		u.components.prompt.Focus()
+		errOutput := u.components.renderer.RenderError(fmt.Sprintf("\nchat error: %s\n", msg.err.Error()))
+		if u.state.runMode == CliMode {
+			return u, tea.Sequence(tea.Println(errOutput), tea.Quit)
+		}
+		return u, tea.Sequence(tea.Println(errOutput), textinput.Blink)
+
 	case error:
 		u.state.error = msg
-		return u, nil
 	}
 
-	return u, tea.Batch(cmds...)
+	return u, nil
 }
 
 func (u *Ui) View() string {
 	if u.state.error != nil {
-		return u.components.renderer.RenderError(fmt.Sprintf("[error] %s", u.state.error))
+		if u.components.renderer != nil {
+			return u.components.renderer.RenderError(fmt.Sprintf("[error] %s", u.state.error))
+		}
+		return fmt.Sprintf("[error] %s\n", u.state.error)
 	}
 
 	if u.state.configuring {
-		return fmt.Sprintf(
-			"%s\n%s",
-			u.components.renderer.RenderContent(u.state.buffer),
-			u.components.prompt.View(),
-		)
+		if u.components.renderer != nil {
+			return fmt.Sprintf(
+				"%s\n%s",
+				u.components.renderer.RenderContent(u.state.buffer),
+				u.components.prompt.View(),
+			)
+		}
+		return u.components.prompt.View()
 	}
 
 	if !u.state.querying && !u.state.confirming && !u.state.executing {
@@ -428,16 +251,25 @@ func (u *Ui) View() string {
 	}
 
 	if u.state.promptMode == ChatPromptMode {
-		return u.components.renderer.RenderContent(u.state.buffer)
+		if u.components.renderer != nil {
+			return u.components.renderer.RenderContent(u.state.buffer)
+		}
+		return u.state.buffer
 	} else {
 		if u.state.querying {
 			return u.components.spinner.View()
 		} else {
 			if u.state.executing {
-				return u.components.renderer.RenderHelp("\n  executing command...")
+				if u.components.renderer != nil {
+					return u.components.renderer.RenderHelp("\n  executing command...")
+				}
+				return "\n  executing command...\n"
 			}
 
-			return u.components.renderer.RenderContent(u.state.buffer)
+			if u.components.renderer != nil {
+				return u.components.renderer.RenderContent(u.state.buffer)
+			}
+			return u.state.buffer
 		}
 	}
 }
@@ -461,6 +293,7 @@ func (u *Ui) startRepl(config *config.Config) tea.Cmd {
 
 			engine, err := ai.NewEngine(engineMode, config)
 			if err != nil {
+				logger.Log.Error().Err(err).Msg("failed to create engine in REPL mode")
 				return err
 			}
 
@@ -473,12 +306,16 @@ func (u *Ui) startRepl(config *config.Config) tea.Cmd {
 			u.state.command = ""
 			u.components.prompt = NewPrompt(u.state.promptMode)
 
+			logger.Log.Info().Str("mode", engineMode.String()).Str("pipe", u.state.pipe).Msg("REPL started")
+
 			return nil
 		},
 	)
 }
 
 func (u *Ui) startCli(config *config.Config) tea.Cmd {
+	logger.Log.Debug().Str("args", u.state.args).Str("pipe", u.state.pipe).Msg("starting CLI mode")
+
 	u.config = config
 
 	if u.state.promptMode == DefaultPromptMode {
@@ -492,6 +329,7 @@ func (u *Ui) startCli(config *config.Config) tea.Cmd {
 
 	engine, err := ai.NewEngine(engineMode, config)
 	if err != nil {
+		logger.Log.Error().Err(err).Msg("failed to create engine in CLI mode")
 		u.state.error = err
 		return nil
 	}
@@ -505,6 +343,8 @@ func (u *Ui) startCli(config *config.Config) tea.Cmd {
 	u.state.confirming = false
 	u.state.buffer = ""
 	u.state.command = ""
+
+	logger.Log.Info().Str("mode", engineMode.String()).Str("args", u.state.args).Msg("CLI mode started")
 
 	if u.state.promptMode == ExecPromptMode {
 		return tea.Batch(
@@ -641,8 +481,166 @@ func (u *Ui) refreshConfigScreen() {
 	u.configFlow.ApplyToPrompt(u.components.prompt)
 }
 
+func (u *Ui) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		return u, tea.Quit
+
+	case tea.KeyUp, tea.KeyDown:
+		if u.state.configuring {
+			u.configFlow.SetCurrentValue(u.components.prompt.GetValue())
+			if msg.Type == tea.KeyUp {
+				u.configFlow.Move(-1)
+			} else {
+				u.configFlow.Move(1)
+			}
+			u.refreshConfigScreen()
+			return u, textinput.Blink
+		}
+		if !u.state.querying && !u.state.confirming {
+			var input *string
+			if msg.Type == tea.KeyUp {
+				input = u.history.GetPrevious()
+			} else {
+				input = u.history.GetNext()
+			}
+			if input != nil {
+				u.components.prompt.SetValue(*input)
+				prompt, cmd := u.components.prompt.Update(msg)
+				u.components.prompt = prompt
+				return u, cmd
+			}
+		}
+
+	case tea.KeyTab:
+		if !u.state.querying && !u.state.confirming && !u.state.configuring {
+			if u.state.promptMode == ChatPromptMode {
+				u.state.promptMode = ExecPromptMode
+				u.components.prompt.SetMode(ExecPromptMode)
+				u.engine.SetMode(ai.ExecEngineMode)
+			} else {
+				u.state.promptMode = ChatPromptMode
+				u.components.prompt.SetMode(ChatPromptMode)
+				u.engine.SetMode(ai.ChatEngineMode)
+			}
+			prompt, cmd := u.components.prompt.Update(msg)
+			u.components.prompt = prompt
+			return u, tea.Batch(cmd, textinput.Blink)
+		}
+
+	case tea.KeyEnter:
+		if u.state.configuring {
+			return u, u.advanceConfig()
+		}
+		if !u.state.querying && !u.state.confirming {
+			input := u.components.prompt.GetValue()
+			if input != "" {
+				inputPrint := u.components.prompt.AsString()
+				u.history.Add(input)
+				u.components.prompt.SetValue("")
+				u.components.prompt.Blur()
+				prompt, cmd := u.components.prompt.Update(msg)
+				u.components.prompt = prompt
+				if u.state.promptMode == ChatPromptMode {
+					return u, tea.Batch(
+						cmd,
+						tea.Println(inputPrint),
+						u.startChatStream(input),
+						u.awaitChatStream(),
+					)
+				}
+				return u, tea.Batch(
+					cmd,
+					tea.Println(inputPrint),
+					u.startExec(input),
+					u.components.spinner.Tick,
+				)
+			}
+		}
+
+	case tea.KeyCtrlH:
+		if !u.state.configuring && !u.state.querying && !u.state.confirming {
+			prompt, cmd := u.components.prompt.Update(msg)
+			u.components.prompt = prompt
+			return u, tea.Batch(
+				cmd,
+				tea.Println(u.components.renderer.RenderContent(u.components.renderer.RenderHelpMessage())),
+				textinput.Blink,
+			)
+		}
+
+	case tea.KeyCtrlL:
+		if !u.state.querying && !u.state.confirming {
+			prompt, cmd := u.components.prompt.Update(msg)
+			u.components.prompt = prompt
+			return u, tea.Batch(cmd, tea.ClearScreen, textinput.Blink)
+		}
+
+	case tea.KeyCtrlR:
+		if !u.state.querying && !u.state.confirming {
+			u.history.Reset()
+			u.engine.Reset()
+			u.state.buffer = ""
+			u.state.command = ""
+			u.components.prompt.SetValue("")
+			prompt, cmd := u.components.prompt.Update(msg)
+			u.components.prompt = prompt
+			return u, tea.Batch(
+				cmd,
+				tea.ClearScreen,
+				tea.Println(u.components.renderer.RenderContent(u.components.renderer.RenderHelpMessage())),
+				textinput.Blink,
+			)
+		}
+
+	case tea.KeyCtrlS:
+		if !u.state.querying && !u.state.confirming && !u.state.configuring && !u.state.executing {
+			u.state.executing = true
+			u.state.buffer = ""
+			u.state.command = ""
+			u.components.prompt.Blur()
+			prompt, cmd := u.components.prompt.Update(msg)
+			u.components.prompt = prompt
+			return u, tea.Batch(cmd, u.editSettings())
+		}
+	}
+	if u.state.confirming {
+		if strings.ToLower(msg.String()) == "y" {
+			u.state.confirming = false
+			u.state.executing = true
+			u.state.buffer = ""
+			u.components.prompt.SetValue("")
+			return u, u.execCommand(u.state.command)
+		}
+		u.state.confirming = false
+		u.state.executing = false
+		u.state.buffer = ""
+		prompt, cmd := u.components.prompt.Update(msg)
+		u.components.prompt = prompt
+		u.components.prompt.SetValue("")
+		u.components.prompt.Focus()
+		if u.state.runMode == ReplMode {
+			return u, tea.Batch(
+				cmd,
+				tea.Println(fmt.Sprintf("\n%s\n", u.components.renderer.RenderWarning("[cancel]"))),
+				textinput.Blink,
+			)
+		}
+		return u, tea.Sequence(
+			cmd,
+			tea.Println(fmt.Sprintf("\n%s\n", u.components.renderer.RenderWarning("[cancel]"))),
+			tea.Quit,
+		)
+	}
+	u.components.prompt.Focus()
+	prompt, cmd := u.components.prompt.Update(msg)
+	u.components.prompt = prompt
+	return u, tea.Batch(cmd, textinput.Blink)
+}
+
 func (u *Ui) startExec(input string) tea.Cmd {
 	return func() tea.Msg {
+		logger.Log.Debug().Str("input", input).Msg("starting exec")
 		u.state.querying = true
 		u.state.confirming = false
 		u.state.buffer = ""
@@ -651,15 +649,18 @@ func (u *Ui) startExec(input string) tea.Cmd {
 		output, err := u.engine.ExecCompletion(input)
 		u.state.querying = false
 		if err != nil {
-			return err
+			logger.Log.Error().Err(err).Msg("exec completion failed")
+			return execErrorMsg{err}
 		}
 
+		logger.Log.Debug().Str("cmd", output.GetCommand()).Bool("executable", output.IsExecutable()).Msg("exec completed")
 		return *output
 	}
 }
 
 func (u *Ui) startChatStream(input string) tea.Cmd {
 	return func() tea.Msg {
+		logger.Log.Debug().Str("input", input).Msg("starting chat stream")
 		u.state.querying = true
 		u.state.executing = false
 		u.state.confirming = false
@@ -668,7 +669,8 @@ func (u *Ui) startChatStream(input string) tea.Cmd {
 
 		err := u.engine.ChatStreamCompletion(input)
 		if err != nil {
-			return err
+			logger.Log.Error().Err(err).Msg("chat stream failed")
+			return chatErrorMsg{err}
 		}
 
 		return nil
@@ -691,6 +693,7 @@ func (u *Ui) execCommand(input string) tea.Cmd {
 	u.state.executing = true
 
 	return func() tea.Msg {
+		logger.Log.Info().Str("shell", u.config.GetSystemConfig().GetShell()).Str("command", input).Msg("executing command")
 		output, error := run.RunInteractiveCommand(u.config.GetSystemConfig().GetShell(), input)
 		u.state.executing = false
 		u.state.command = ""
@@ -700,9 +703,15 @@ func (u *Ui) execCommand(input string) tea.Cmd {
 				content = "[no output]"
 			}
 
-			u.engine.AppendFunctionMessage(
+			u.engine.AppendAssistantMessage(
 				fmt.Sprintf("Command: %s\nOutput:\n%s", input, content),
 			)
+		}
+
+		if error != nil {
+			logger.Log.Error().Err(error).Str("command", input).Msg("command execution failed")
+		} else {
+			logger.Log.Info().Str("command", input).Msg("command executed successfully")
 		}
 
 		return run.NewRunOutput(error, "[error]", "[ok]", output)

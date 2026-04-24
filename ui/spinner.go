@@ -21,6 +21,7 @@ var loadingMessages = []string{
 
 type Spinner struct {
 	message string
+	dots    int
 	spinner spinner.Model
 }
 
@@ -30,22 +31,37 @@ func NewSpinner() *Spinner {
 
 	return &Spinner{
 		message: loadingMessages[rand.Intn(len(loadingMessages))],
+		dots:    1,
 		spinner: spin,
 	}
+}
+
+func (s *Spinner) SetMessage(msg string) *Spinner {
+	s.message = msg
+	return s
 }
 
 func (s *Spinner) Update(msg tea.Msg) (*Spinner, tea.Cmd) {
 	var updateCmd tea.Cmd
 	s.spinner, updateCmd = s.spinner.Update(msg)
 
+	if _, ok := msg.(spinner.TickMsg); ok {
+		s.dots = (s.dots % 3) + 1
+	}
+
 	return s, updateCmd
 }
 
 func (s *Spinner) View() string {
+	dots := ""
+	for i := 0; i < s.dots; i++ {
+		dots += "."
+	}
 	return fmt.Sprintf(
-		"\n  %s %s...",
+		"\n  %s %s%s",
 		s.spinner.View(),
 		s.spinner.Style.Render(s.message),
+		dots,
 	)
 }
 
