@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -24,6 +25,13 @@ type execErrorMsg struct {
 type chatErrorMsg struct {
 	err error
 }
+
+type parallelFallbackMsg struct {
+	runOut    run.RunOutput
+	engineOut ai.EngineExecOutput
+}
+
+type replStartedMsg struct{}
 
 type UiState struct {
 	error       error
@@ -139,6 +147,9 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		u.dimensions.width = msg.Width
 		u.dimensions.height = msg.Height
 
+	case replStartedMsg:
+		return u, textinput.Blink
+
 	case tea.KeyMsg:
 		return u.handleKeyPress(msg)
 
@@ -159,6 +170,36 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		prompt, cmd := u.components.prompt.Update(msg)
 		u.components.prompt = prompt
+		return u, tea.Sequence(cmd, textinput.Blink, tea.Println(output))
+
+	case parallelFallbackMsg:
+		u.state.querying = false
+		prompt, cmd := u.components.prompt.Update(msg)
+		u.components.prompt = prompt
+
+		var output string
+		runOutput := strings.TrimSpace(msg.runOut.GetContent())
+		if runOutput != "" {
+			output += u.components.renderer.RenderContent(runOutput) + "\n"
+		}
+		if msg.runOut.HasError() {
+			errOutput := u.components.renderer.RenderError(fmt.Sprintf("\n%s\n", msg.runOut.GetErrorMessage()))
+			output += errOutput + "\n"
+		}
+
+		if msg.engineOut.IsExecutable() {
+			u.state.confirming = true
+			u.state.command = msg.engineOut.GetCommand()
+			output += u.components.renderer.RenderContent(fmt.Sprintf("`%s`", u.state.command))
+			output += fmt.Sprintf("  %s\n\n  confirm execution? [y/N]", u.components.renderer.RenderHelp(msg.engineOut.GetExplanation()))
+			u.components.prompt.Blur()
+		} else {
+			output += u.components.renderer.RenderContent(msg.engineOut.GetExplanation())
+			u.components.prompt.Focus()
+			if u.state.runMode == CliMode {
+				return u, tea.Sequence(tea.Println(output), tea.Quit)
+			}
+		}
 		return u, tea.Sequence(cmd, textinput.Blink, tea.Println(output))
 
 	case ai.EngineChatStreamOutput:
@@ -308,7 +349,7 @@ func (u *Ui) startRepl(config *config.Config) tea.Cmd {
 
 			logger.Log.Info().Str("mode", engineMode.String()).Str("pipe", u.state.pipe).Msg("REPL started")
 
-			return nil
+			return replStartedMsg{}
 		},
 	)
 }
@@ -349,15 +390,7 @@ func (u *Ui) startCli(config *config.Config) tea.Cmd {
 	if u.state.promptMode == ExecPromptMode {
 		return tea.Batch(
 			u.components.spinner.Tick,
-			func() tea.Msg {
-				output, err := u.engine.ExecCompletion(u.state.args)
-				u.state.querying = false
-				if err != nil {
-					return err
-				}
-
-				return *output
-			},
+			u.startExec(u.state.args),
 		)
 	} else {
 		return tea.Batch(
@@ -433,15 +466,7 @@ func (u *Ui) finishConfig() tea.Cmd {
 			return tea.Sequence(
 				tea.Println(u.components.renderer.RenderSuccess("\n[settings ok]")),
 				u.components.spinner.Tick,
-				func() tea.Msg {
-					output, err := u.engine.ExecCompletion(u.state.args)
-					u.state.querying = false
-					if err != nil {
-						return err
-					}
-
-					return *output
-				},
+				u.startExec(u.state.args),
 			)
 		} else {
 			return tea.Batch(
@@ -646,15 +671,36 @@ func (u *Ui) startExec(input string) tea.Cmd {
 		u.state.buffer = ""
 		u.state.command = ""
 
-		output, err := u.engine.ExecCompletion(input)
-		u.state.querying = false
-		if err != nil {
-			logger.Log.Error().Err(err).Msg("exec completion failed")
-			return execErrorMsg{err}
+		type engineResult struct {
+			out *ai.EngineExecOutput
+			err error
+		}
+		engineCh := make(chan engineResult, 1)
+
+		go func() {
+			out, err := u.engine.ExecCompletion(context.Background(), input)
+			engineCh <- engineResult{out, err}
+		}()
+
+		cmdOut, cmdErr := run.RunInteractiveCommand(u.config.GetSystemConfig().GetShell(), input)
+
+		if cmdErr == nil {
+			logger.Log.Debug().Str("cmd", input).Msg("direct exec succeeded")
+			return run.NewRunOutput(nil, "", "", cmdOut)
 		}
 
-		logger.Log.Debug().Str("cmd", output.GetCommand()).Bool("executable", output.IsExecutable()).Msg("exec completed")
-		return *output
+		logger.Log.Debug().Err(cmdErr).Str("cmd", input).Msg("direct exec failed, waiting for engine")
+		res := <-engineCh
+		if res.err != nil {
+			logger.Log.Error().Err(res.err).Msg("exec completion failed too")
+			return run.NewRunOutput(fmt.Errorf("command failed: %w. engine failed: %v", cmdErr, res.err), "[error]", "", cmdOut)
+		}
+
+		logger.Log.Debug().Str("cmd", res.out.GetCommand()).Bool("executable", res.out.IsExecutable()).Msg("exec completed fallback")
+		return parallelFallbackMsg{
+			runOut:    run.NewRunOutput(cmdErr, "[error]", "", cmdOut),
+			engineOut: *res.out,
+		}
 	}
 }
 
@@ -667,7 +713,7 @@ func (u *Ui) startChatStream(input string) tea.Cmd {
 		u.state.buffer = ""
 		u.state.command = ""
 
-		err := u.engine.ChatStreamCompletion(input)
+		err := u.engine.ChatStreamCompletion(context.Background(), input)
 		if err != nil {
 			logger.Log.Error().Err(err).Msg("chat stream failed")
 			return chatErrorMsg{err}

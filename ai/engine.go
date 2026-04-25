@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ilayaraja97/clipper/config"
@@ -31,6 +32,7 @@ type Engine struct {
 	channel  chan EngineChatStreamOutput
 	pipe     string
 	running  bool
+	mu       sync.Mutex
 }
 
 func NewEngine(mode EngineMode, config *config.Config) (*Engine, error) {
@@ -77,6 +79,7 @@ func NewEngine(mode EngineMode, config *config.Config) (*Engine, error) {
 		channel:  make(chan EngineChatStreamOutput),
 		pipe:     "",
 		running:  false,
+		mu:       sync.Mutex{},
 	}, nil
 }
 
@@ -114,14 +117,16 @@ func (e *Engine) Interrupt() *Engine {
 }
 
 func (e *Engine) Reset() *Engine {
+	e.mu.Lock()
 	e.messages = []llms.MessageContent{}
+	e.mu.Unlock()
 
 	return e
 }
 
-func (e *Engine) ExecCompletion(input string) (*EngineExecOutput, error) {
+func (e *Engine) ExecCompletion(ctx context.Context, input string) (*EngineExecOutput, error) {
 	logger.Log.Debug().Str("input", input).Msg("executing completion")
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
 	e.running = true
@@ -136,6 +141,12 @@ func (e *Engine) ExecCompletion(input string) (*EngineExecOutput, error) {
 		llms.WithTemperature(e.config.GetAiConfig().GetTemperature()),
 	)
 	if err != nil {
+		e.mu.Lock()
+		if len(e.messages) > 0 && e.messages[len(e.messages)-1].Role == llms.ChatMessageTypeHuman {
+			e.messages = e.messages[:len(e.messages)-1]
+		}
+		e.mu.Unlock()
+
 		if ctx.Err() == context.DeadlineExceeded {
 			logger.Log.Error().Msg("completion request timed out")
 			return nil, fmt.Errorf("request timed out after %v", requestTimeout)
@@ -182,9 +193,9 @@ func (e *Engine) ExecCompletion(input string) (*EngineExecOutput, error) {
 	return &output, nil
 }
 
-func (e *Engine) ChatStreamCompletion(input string) error {
+func (e *Engine) ChatStreamCompletion(ctx context.Context, input string) error {
 	logger.Log.Debug().Str("input", input).Msg("starting chat stream completion")
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
 	e.running = true
@@ -225,6 +236,12 @@ func (e *Engine) ChatStreamCompletion(input string) error {
 	)
 
 	if err != nil && !errors.Is(err, context.Canceled) {
+		e.mu.Lock()
+		if len(e.messages) > 0 && e.messages[len(e.messages)-1].Role == llms.ChatMessageTypeHuman {
+			e.messages = e.messages[:len(e.messages)-1]
+		}
+		e.mu.Unlock()
+
 		if ctx.Err() == context.DeadlineExceeded {
 			logger.Log.Error().Msg("chat stream request timed out")
 			e.running = false
@@ -259,13 +276,17 @@ func (e *Engine) ChatStreamCompletion(input string) error {
 }
 
 func (e *Engine) appendUserMessage(content string) *Engine {
+	e.mu.Lock()
 	e.messages = append(e.messages, llms.TextParts(llms.ChatMessageTypeHuman, content))
+	e.mu.Unlock()
 
 	return e
 }
 
 func (e *Engine) appendAssistantMessage(content string) *Engine {
+	e.mu.Lock()
 	e.messages = append(e.messages, llms.TextParts(llms.ChatMessageTypeAI, content))
+	e.mu.Unlock()
 
 	return e
 }
@@ -286,7 +307,9 @@ func (e *Engine) prepareCompletionMessages() []llms.MessageContent {
 		)
 	}
 
+	e.mu.Lock()
 	messages = append(messages, e.messages...)
+	e.mu.Unlock()
 
 	return messages
 }
