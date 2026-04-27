@@ -205,7 +205,6 @@ func (e *Engine) ChatStreamCompletion(ctx context.Context, input string) (*Engin
 		llms.WithMaxTokens(e.config.GetAiConfig().GetMaxTokens()),
 		llms.WithTemperature(e.config.GetAiConfig().GetTemperature()),
 	)
-
 	if err != nil {
 		e.mu.Lock()
 		if len(e.messages) > 0 && e.messages[len(e.messages)-1].Role == llms.ChatMessageTypeHuman {
