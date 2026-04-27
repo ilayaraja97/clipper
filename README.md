@@ -1,7 +1,5 @@
 # Clipper - AI powered terminal assistant
 
-> Forked from https://github.com/ekkinox/yai/
-
 [![build](https://github.com/ilayaraja97/clipper/actions/workflows/build.yml/badge.svg)](https://github.com/ilayaraja97/clipper/actions/workflows/build.yml)
 [![release](https://github.com/ilayaraja97/clipper/actions/workflows/release.yml/badge.svg)](https://github.com/ilayaraja97/clipper/actions/workflows/release.yml)
 [![doc](https://github.com/ilayaraja97/clipper/actions/workflows/jekyll-gh-pages.yml/badge.svg)](https://github.com/ilayaraja97/clipper/actions/workflows/jekyll-gh-pages.yml)

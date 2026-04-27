@@ -14,7 +14,7 @@ endif
 else
 BINEXT :=
 ifeq ($(strip $(BINDIR)),)
-BINDIR := /usr/local/bin
+BINDIR := ${HOME}/.local/bin
 endif
 endif
 

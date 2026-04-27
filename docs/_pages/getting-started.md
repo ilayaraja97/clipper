@@ -75,7 +75,7 @@ It will then generate your configuration in the file `~/.config/clipper.json`, w
   "proxy": "",
   "temperature": 0.2,
   "max_tokens": 1000,
-  "user_default_prompt_mode": "exec",
+  "user_default_prompt_mode": "chat",
   "user_preferences": ""
 }
 ```

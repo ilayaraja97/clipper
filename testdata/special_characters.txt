@@ -1,0 +1,59 @@
+Special Characters Test File
+===========================
+
+This file contains various special characters and Unicode content for testing clipper's handling of different character sets.
+
+Basic Special Characters:
+- Quotes: "double" and 'single'
+- Symbols: @ # $ % ^ & * ( ) _ + - = [ ] { } | \ : ; < > , . ? /
+- Math: × ÷ ± √ ∑ ∏ ∞ ≠ ≤ ≥ ≈
+- Arrows: ← → ↑ ↓ ↔ ↕ ⇐ ⇒ ⇔
+
+Unicode Characters:
+- Emojis: 😀 👍 🚀 🌟 💻 🔧 ⚡
+- Accented: café, naïve, résumé, façade
+- Currencies: $ € £ ¥ ₿ ₽ ₹
+- Fractions: ½ ⅓ ¼ ⅛ ⅔ ¾
+
+International Text:
+- Spanish: Hola mundo, ¿cómo estás?
+- French: Bonjour le monde, comment allez-vous?
+- German: Hallo Welt, wie geht es dir?
+- Japanese: こんにちは世界 (Konnichiwa sekai)
+- Chinese: 你好世界 (Nǐ hǎo shìjiè)
+- Arabic: مرحبا بالعالم (Marhaban bialalam)
+- Russian: Привет мир (Privet mir)
+- Hindi: नमस्ते दुनिया (Namaste duniya)
+
+Mathematical Expressions:
+∫ f(x) dx = F(x) + C
+lim(x→∞) f(x) = L
+∂f/∂x = gradient
+∑(i=1 to n) x_i = total
+
+Chemical Formulas:
+H₂O, CO₂, NaCl, C₆H₁₂O₆
+Fe²⁺ + 2OH⁻ → Fe(OH)₂
+
+File Paths:
+/home/user/documents/file.txt
+C:\Program Files\Application\config.ini
+./relative/path/to/file
+~/user/home/directory
+
+URLs:
+https://www.example.com/path?param=value&other=123
+ftp://ftp.example.com/files/data.zip
+mailto:user@example.com
+
+Regular Expressions:
+\d{3}-\d{2}-\d{4} (SSN pattern)
+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,} (email)
+^\d{4}-\d{2}-\d{2}$ (date pattern)
+
+SQL Injection Attempts (for testing):
+' OR '1'='1
+; DROP TABLE users; --
+1' UNION SELECT * FROM users --
+
+This file tests clipper's ability to handle various character encodings and special content.

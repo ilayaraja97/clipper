@@ -1,0 +1,7 @@
+id,name,email,department,salary,start_date
+1,Alice Johnson,alice@example.com,Engineering,95000,2022-03-15
+2,Bob Smith,bob@example.com,Marketing,65000,2023-01-10
+3,Charlie Brown,charlie@example.com,Sales,70000,2021-11-22
+4,Diana Prince,diana@example.com,HR,60000,2023-06-01
+5,Eve Wilson,eve@example.com,Engineering,105000,2020-08-30
+6,Frank Miller,frank@example.com,Finance,75000,2022-09-15

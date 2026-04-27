@@ -1,0 +1,1 @@
+sample_script.sh:10:1: warning: SCRIPT_DIR appears unused. Verify use (or export if used externally). [SC2034]

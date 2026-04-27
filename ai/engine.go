@@ -231,11 +231,20 @@ func (e *Engine) ChatStreamCompletion(ctx context.Context, input string) (*Engin
 	err = json.Unmarshal([]byte(content), &output)
 	if err != nil {
 		logger.Log.Debug().Str("content", content).Msg("JSON unmarshal failed, trying regex extraction")
-		re := regexp.MustCompile(`\{.*?\}`)
-		match := re.FindString(content)
-		if match != "" {
-			err = json.Unmarshal([]byte(match), &output)
-			if err != nil {
+		re := regexp.MustCompile(`\{[ ]*"cmd"[ ]*:[ ]*"(?:\\.|[^"\\])*"[ ]*,[ ]*"exp"[ ]*:[ ]*"(?:\\.|[^"\\])*"[ ]*,[ ]*"exec"[ ]*:[ ]*(?:true|false)[ ]*\}`)
+		matches := re.FindAllString(content, -1)
+		if len(matches) > 0 {
+			jsonMatch := false
+			for _, match := range matches {
+				var tempOutput EngineExecOutput
+				err = json.Unmarshal([]byte(match), &tempOutput)
+				if err == nil {
+					output = tempOutput
+					jsonMatch = true
+					break
+				}
+			}
+			if !jsonMatch {
 				logger.Log.Error().Err(err).Msg("failed to extract JSON from content")
 				return nil, err
 			}

@@ -1,0 +1,15 @@
+2024-01-15 10:30:15 INFO  Application started successfully
+2024-01-15 10:30:16 INFO  Database connection established
+2024-01-15 10:31:22 INFO  User Alice Johnson logged in
+2024-01-15 10:32:45 WARN  High memory usage detected: 85%
+2024-01-15 10:33:12 INFO  Processing batch job #12345
+2024-01-15 10:35:33 ERROR Failed to connect to external API: timeout
+2024-01-15 10:35:35 INFO  Retrying API connection (attempt 1/3)
+2024-01-15 10:35:40 INFO  API connection successful
+2024-01-15 10:36:01 INFO  Batch job #12345 completed successfully
+2024-01-15 10:37:15 INFO  User Bob Smith logged in
+2024-01-15 10:38:22 INFO  System backup initiated
+2024-01-15 10:42:10 INFO  System backup completed
+2024-01-15 10:45:30 WARN  Disk space running low: 92% used
+2024-01-15 10:46:15 INFO  Cleanup process started
+2024-01-15 10:48:20 INFO  Cleanup completed, freed 2.3GB space
