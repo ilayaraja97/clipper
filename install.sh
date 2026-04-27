@@ -43,7 +43,7 @@ case ${MACHINE} in
 esac
 
 BINNAME="${BINNAME:-clipper}"
-BINDIR="${BINDIR:-/usr/local/bin}"
+BINDIR="${BINDIR:-${HOME}/.local/bin}"
 URL="https://github.com/$REPOOWNER/$REPONAME/releases/download/${RELEASETAG}/clipper_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz"
 
 echo "Downloading version $RELEASETAG from $URL"
@@ -52,7 +52,8 @@ echo
 curl -q --fail --location --progress-bar --output "clipper_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz" "$URL"
 tar xzf "clipper_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz"
 chmod +x $BINNAME
-sudo mv $BINNAME $BINDIR/$BINNAME
+mkdir -p $BINDIR
+mv $BINNAME $BINDIR/$BINNAME
 rm "clipper_${RELEASETAG}_${KERNEL}_${MACHINE}.tar.gz"
 
 echo
