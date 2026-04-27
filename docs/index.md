@@ -7,7 +7,7 @@ classes: wide
 
 > With `Clipper`, unleash the power of artificial intelligence to streamline your command line experience.
 
-![](https://raw.githubusercontent.com/ilayaraja97/clipper/main/docs/_assets/intro.gif)
+[![Demo](https://img.youtube.com/vi/VCf5SbkZZLE/0.jpg)](https://www.youtube.com/watch?v=VCf5SbkZZLE)
 
 Just type your request in everyday language, and it will determine the appropriate command line action to take, or engage in conversation on any topics you have in mind.
 
