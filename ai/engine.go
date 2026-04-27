@@ -3,12 +3,10 @@ package ai
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,9 +18,7 @@ import (
 	"github.com/tmc/langchaingo/llms/openai"
 )
 
-const requestTimeout = 60 * time.Second
-
-const noexec = "[noexec]"
+const requestTimeout = 15 * time.Second
 
 type Engine struct {
 	mode     EngineMode
@@ -193,7 +189,7 @@ func (e *Engine) ExecCompletion(ctx context.Context, input string) (*EngineExecO
 	return &output, nil
 }
 
-func (e *Engine) ChatStreamCompletion(ctx context.Context, input string) error {
+func (e *Engine) ChatStreamCompletion(ctx context.Context, input string) (*EngineExecOutput, error) {
 	logger.Log.Debug().Str("input", input).Msg("starting chat stream completion")
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
@@ -202,40 +198,15 @@ func (e *Engine) ChatStreamCompletion(ctx context.Context, input string) error {
 
 	e.appendUserMessage(input)
 
-	var output string
-	_, err := e.client.GenerateContent(
+	resp, err := e.client.GenerateContent(
 		ctx,
 		e.prepareCompletionMessages(),
 		llms.WithModel(e.config.GetAiConfig().GetModel()),
 		llms.WithMaxTokens(e.config.GetAiConfig().GetMaxTokens()),
 		llms.WithTemperature(e.config.GetAiConfig().GetTemperature()),
-		llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
-			if !e.running {
-				logger.Log.Debug().Msg("stream interrupted by user")
-				cancel()
-				return context.Canceled
-			}
-
-			select {
-			case <-ctx.Done():
-				logger.Log.Debug().Msg("stream timed out")
-				return ctx.Err()
-			default:
-			}
-
-			delta := string(chunk)
-			output += delta
-
-			e.channel <- EngineChatStreamOutput{
-				content: delta,
-				last:    false,
-			}
-
-			return nil
-		}),
 	)
 
-	if err != nil && !errors.Is(err, context.Canceled) {
+	if err != nil {
 		e.mu.Lock()
 		if len(e.messages) > 0 && e.messages[len(e.messages)-1].Role == llms.ChatMessageTypeHuman {
 			e.messages = e.messages[:len(e.messages)-1]
@@ -243,36 +214,49 @@ func (e *Engine) ChatStreamCompletion(ctx context.Context, input string) error {
 		e.mu.Unlock()
 
 		if ctx.Err() == context.DeadlineExceeded {
-			logger.Log.Error().Msg("chat stream request timed out")
-			e.running = false
-			return fmt.Errorf("request timed out after %v", requestTimeout)
+			logger.Log.Error().Msg("chat request timed out")
+			return nil, fmt.Errorf("request timed out after %v", requestTimeout)
 		}
-		logger.Log.Error().Err(err).Msg("chat stream request failed")
-		e.running = false
-		return err
+		logger.Log.Error().Err(err).Msg("chat request failed")
+		return nil, err
+	}
+	if len(resp.Choices) == 0 {
+		logger.Log.Warn().Msg("empty response from model")
+		return nil, fmt.Errorf("empty response from model")
 	}
 
-	executable := false
-	if e.mode == ExecEngineMode {
-		if !strings.HasPrefix(output, noexec) && !strings.Contains(output, "\n") {
-			executable = true
+	content := resp.Choices[0].Content
+	e.appendAssistantMessage(content)
+
+	var output EngineExecOutput
+	err = json.Unmarshal([]byte(content), &output)
+	if err != nil {
+		logger.Log.Debug().Str("content", content).Msg("JSON unmarshal failed, trying regex extraction")
+		re := regexp.MustCompile(`\{.*?\}`)
+		match := re.FindString(content)
+		if match != "" {
+			err = json.Unmarshal([]byte(match), &output)
+			if err != nil {
+				logger.Log.Error().Err(err).Msg("failed to extract JSON from content")
+				return nil, err
+			}
+		} else {
+			logger.Log.Debug().Msg("no JSON found in response, using raw content")
+			output = EngineExecOutput{
+				Command:     "",
+				Explanation: content,
+				Executable:  false,
+			}
 		}
 	}
 
 	logger.Log.Debug().
-		Str("output", output).
-		Bool("executable", executable).
-		Msg("chat stream completed")
+		Bool("executable", output.IsExecutable()).
+		Str("cmd", output.GetCommand()).
+		Str("exp", output.GetExplanation()).
+		Msg("chat completion result")
 
-	e.channel <- EngineChatStreamOutput{
-		content:    "",
-		last:       true,
-		executable: executable,
-	}
-	e.running = false
-	e.appendAssistantMessage(output)
-
-	return nil
+	return &output, nil
 }
 
 func (e *Engine) appendUserMessage(content string) *Engine {
@@ -347,14 +331,26 @@ func (e *Engine) prepareSystemPromptExecPart() string {
 }
 
 func (e *Engine) prepareSystemPromptChatPart() string {
-	return "You are Clipper, a powerful terminal assistant created by github.com/ilayaraja97.\n" +
-		"You will answer in the most helpful possible way.\n" +
-		"Always format your answer in markdown format.\n\n" +
-		"For example:\n" +
+	return "Your are Clipper, a powerful terminal assistant generating a JSON containing a command line and chatter for my input.\n" +
+		"You will always reply using the following json structure: {\"cmd\":\"the command\", \"exp\": \"some chatter\", \"exec\": true}.\n" +
+		"Your answer will always only contain the json structure, never add any advice or supplementary detail or information, even if I asked the same question before.\n" +
+		"The field cmd will contain a single line command (don't use new lines, use separators like && and ; instead).\n" +
+		"The field exp will contain an short chatter for my input if you managed to generate an executable command, otherwise it will contain the reason of your failure.\n" +
+		"The field exec will contain true if you managed to generate an executable command, false otherwise." +
+		"\n" +
+		"Examples:\n" +
+		"Me: list all files in my home dir\n" +
+		"Clipper: {\"cmd\":\"ls ~\", \"exp\": \"list all files in your home dir\", \"exec\\: true}\n" +
+		"Me: list all pods of all namespaces\n" +
+		"Clipper: {\"cmd\":\"kubectl get pods --all-namespaces\", \"exp\": \"list pods form all k8s namespaces\", \"exec\": true}\n" +
+		"Me: how are you ?\n" +
+		"Clipper: {\"cmd\":\"\", \"exp\": \"I'm good thanks! What would you like to do? \", \"exec\": false}" +
 		"Me: What is 2+2 ?\n" +
-		"Clipper: The answer for `2+2` is `4`\n" +
+		"Clipper: {\"cmd\":\"\", \"exp\": \"The answer for `2+2` is `4`\", \"exec\": false}\n" +
 		"Me: +2 again ?\n" +
-		"Clipper: The answer is `6`\n"
+		"Clipper: {\"cmd\":\"\", \"exp\": \"The answer is `6`\", \"exec\": false}\n" +
+		"Me: how do I list files in my home dir?\n" +
+		"Clipper: {\"cmd\":\"ls ~\", \"exp\": \"You can use the `ls` command to list files.\", \"exec\": true}\n"
 }
 
 func (e *Engine) prepareSystemPromptContextPart() string {

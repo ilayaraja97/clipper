@@ -292,6 +292,9 @@ func (u *Ui) View() string {
 	}
 
 	if u.state.promptMode == ChatPromptMode {
+		if u.state.querying {
+			return u.components.spinner.View()
+		}
 		if u.components.renderer != nil {
 			return u.components.renderer.RenderContent(u.state.buffer)
 		}
@@ -394,6 +397,7 @@ func (u *Ui) startCli(config *config.Config) tea.Cmd {
 		)
 	} else {
 		return tea.Batch(
+			u.components.spinner.Tick,
 			u.startChatStream(u.state.args),
 			u.awaitChatStream(),
 		)
@@ -470,6 +474,7 @@ func (u *Ui) finishConfig() tea.Cmd {
 			)
 		} else {
 			return tea.Batch(
+				u.components.spinner.Tick,
 				u.startChatStream(u.state.args),
 				u.awaitChatStream(),
 			)
@@ -567,13 +572,16 @@ func (u *Ui) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				prompt, cmd := u.components.prompt.Update(msg)
 				u.components.prompt = prompt
 				if u.state.promptMode == ChatPromptMode {
+					u.state.querying = true
 					return u, tea.Batch(
 						cmd,
 						tea.Println(inputPrint),
+						u.components.spinner.Tick,
 						u.startChatStream(input),
 						u.awaitChatStream(),
 					)
 				}
+				u.state.querying = true
 				return u, tea.Batch(
 					cmd,
 					tea.Println(inputPrint),
@@ -666,7 +674,6 @@ func (u *Ui) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (u *Ui) startExec(input string) tea.Cmd {
 	return func() tea.Msg {
 		logger.Log.Debug().Str("input", input).Msg("starting exec")
-		u.state.querying = true
 		u.state.confirming = false
 		u.state.buffer = ""
 		u.state.command = ""
@@ -707,19 +714,20 @@ func (u *Ui) startExec(input string) tea.Cmd {
 func (u *Ui) startChatStream(input string) tea.Cmd {
 	return func() tea.Msg {
 		logger.Log.Debug().Str("input", input).Msg("starting chat stream")
-		u.state.querying = true
 		u.state.executing = false
 		u.state.confirming = false
 		u.state.buffer = ""
 		u.state.command = ""
 
-		err := u.engine.ChatStreamCompletion(context.Background(), input)
+		res, err := u.engine.ChatStreamCompletion(context.Background(), input)
 		if err != nil {
 			logger.Log.Error().Err(err).Msg("chat stream failed")
 			return chatErrorMsg{err}
 		}
 
-		return nil
+		return parallelFallbackMsg{
+			engineOut: *res,
+		}
 	}
 }
 
