@@ -6,7 +6,7 @@
 
 > Unleash the power of artificial intelligence to streamline your command line experience.
 
-![Intro](docs/_assets/intro.gif)
+[![Demo](https://img.youtube.com/vi/VCf5SbkZZLE/0.jpg)](https://www.youtube.com/watch?v=VCf5SbkZZLE)
 
 ## What is Clipper?
 
