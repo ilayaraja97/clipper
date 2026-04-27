@@ -360,3 +360,4 @@ func (e *Engine) prepareSystemPromptContextPart() string {
 
 	return part
 }
+
