@@ -31,7 +31,21 @@ type parallelFallbackMsg struct {
 	engineOut ai.EngineExecOutput
 }
 
-type replStartedMsg struct{}
+// commandFinishedMsg reports a confirmed command that ran via tea.ExecProcess.
+// Its output went straight to the terminal, so only the exit status travels here.
+type commandFinishedMsg struct {
+	command string
+	err     error
+}
+
+// settingsReloadedMsg carries the config and engine rebuilt after the user
+// edited settings. They are built off the main loop, so they arrive as a
+// message rather than being assigned to the Ui directly.
+type settingsReloadedMsg struct {
+	config *config.Config
+	engine *ai.Engine
+	err    error
+}
 
 type UiState struct {
 	error       error
@@ -147,9 +161,6 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		u.dimensions.width = msg.Width
 		u.dimensions.height = msg.Height
 
-	case replStartedMsg:
-		return u, textinput.Blink
-
 	case tea.KeyMsg:
 		return u.handleKeyPress(msg)
 
@@ -202,17 +213,62 @@ func (u *Ui) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return u, tea.Sequence(cmd, textinput.Blink, tea.Println(output))
 
-	case ai.EngineChatStreamOutput:
-		if msg.IsLast() {
-			output := u.components.renderer.RenderContent(u.state.buffer)
-			u.state.buffer = ""
-			u.components.prompt.Focus()
-			if u.state.runMode == CliMode {
-				return u, tea.Sequence(tea.Println(output), tea.Quit)
-			}
-			return u, tea.Sequence(tea.Println(output), textinput.Blink)
+	case commandFinishedMsg:
+		u.state.executing = false
+		u.state.command = ""
+		u.components.prompt.Focus()
+
+		if msg.err != nil {
+			logger.Log.Error().Err(msg.err).Str("command", msg.command).Msg("command execution failed")
+		} else {
+			logger.Log.Info().Str("command", msg.command).Msg("command executed successfully")
 		}
-		return u, u.awaitChatStream()
+
+		if u.state.runMode == ReplMode {
+			result := "succeeded"
+			if msg.err != nil {
+				result = fmt.Sprintf("failed (%s)", msg.err.Error())
+			}
+			u.engine.AppendAssistantMessage(
+				fmt.Sprintf("Command: %s\nResult: %s", msg.command, result),
+			)
+		}
+
+		var output string
+		if msg.err != nil {
+			output = u.components.renderer.RenderError(fmt.Sprintf("\n[error]: %s\n", msg.err.Error()))
+		} else {
+			output = u.components.renderer.RenderSuccess("\n[ok]\n")
+		}
+
+		if u.state.runMode == CliMode {
+			return u, tea.Sequence(tea.Println(output), tea.Quit)
+		}
+		return u, tea.Sequence(tea.Println(output), textinput.Blink)
+
+	case settingsReloadedMsg:
+		u.state.executing = false
+		u.state.command = ""
+		u.components.prompt.Focus()
+
+		if msg.err != nil {
+			errOutput := u.components.renderer.RenderError(
+				fmt.Sprintf("\n[settings error]: %s\n", msg.err.Error()),
+			)
+			if u.state.runMode == CliMode {
+				return u, tea.Sequence(tea.Println(errOutput), tea.Quit)
+			}
+			return u, tea.Sequence(tea.Println(errOutput), textinput.Blink)
+		}
+
+		u.config = msg.config
+		u.engine = msg.engine
+
+		output := u.components.renderer.RenderSuccess("\n[settings ok]\n")
+		if u.state.runMode == CliMode {
+			return u, tea.Sequence(tea.Println(output), tea.Quit)
+		}
+		return u, tea.Sequence(tea.Println(output), textinput.Blink)
 
 	case run.RunOutput:
 		u.state.querying = false
@@ -319,41 +375,39 @@ func (u *Ui) View() string {
 }
 
 func (u *Ui) startRepl(config *config.Config) tea.Cmd {
+	u.config = config
+
+	if u.state.promptMode == DefaultPromptMode {
+		u.state.promptMode = GetPromptModeFromString(config.GetUserConfig().GetDefaultPromptMode())
+	}
+
+	engineMode := ai.ExecEngineMode
+	if u.state.promptMode == ChatPromptMode {
+		engineMode = ai.ChatEngineMode
+	}
+
+	engine, err := ai.NewEngine(engineMode, config)
+	if err != nil {
+		logger.Log.Error().Err(err).Msg("failed to create engine in REPL mode")
+		u.state.error = err
+		return nil
+	}
+
+	if u.state.pipe != "" {
+		engine.SetPipe(u.state.pipe)
+	}
+
+	u.engine = engine
+	u.state.buffer = "Welcome \n\n"
+	u.state.command = ""
+	u.components.prompt = NewPrompt(u.state.promptMode)
+
+	logger.Log.Info().Str("mode", engineMode.String()).Str("pipe", u.state.pipe).Msg("REPL started")
+
 	return tea.Sequence(
 		tea.ClearScreen,
 		tea.Println(u.components.renderer.RenderContent(u.components.renderer.RenderHelpMessage())),
 		textinput.Blink,
-		func() tea.Msg {
-			u.config = config
-
-			if u.state.promptMode == DefaultPromptMode {
-				u.state.promptMode = GetPromptModeFromString(config.GetUserConfig().GetDefaultPromptMode())
-			}
-
-			engineMode := ai.ExecEngineMode
-			if u.state.promptMode == ChatPromptMode {
-				engineMode = ai.ChatEngineMode
-			}
-
-			engine, err := ai.NewEngine(engineMode, config)
-			if err != nil {
-				logger.Log.Error().Err(err).Msg("failed to create engine in REPL mode")
-				return err
-			}
-
-			if u.state.pipe != "" {
-				engine.SetPipe(u.state.pipe)
-			}
-
-			u.engine = engine
-			u.state.buffer = "Welcome \n\n"
-			u.state.command = ""
-			u.components.prompt = NewPrompt(u.state.promptMode)
-
-			logger.Log.Info().Str("mode", engineMode.String()).Str("pipe", u.state.pipe).Msg("REPL started")
-
-			return replStartedMsg{}
-		},
 	)
 }
 
@@ -391,6 +445,9 @@ func (u *Ui) startCli(config *config.Config) tea.Cmd {
 	logger.Log.Info().Str("mode", engineMode.String()).Str("args", u.state.args).Msg("CLI mode started")
 
 	if u.state.promptMode == ExecPromptMode {
+		if run.RequiresTTY(u.state.args) {
+			return u.execCommand(u.state.args)
+		}
 		return tea.Batch(
 			u.components.spinner.Tick,
 			u.startExec(u.state.args),
@@ -398,26 +455,23 @@ func (u *Ui) startCli(config *config.Config) tea.Cmd {
 	} else {
 		return tea.Batch(
 			u.components.spinner.Tick,
-			u.startChatStream(u.state.args),
-			u.awaitChatStream(),
+			u.startChat(u.state.args),
 		)
 	}
 }
 
 func (u *Ui) startConfig() tea.Cmd {
-	return func() tea.Msg {
-		u.state.configuring = true
-		u.state.querying = false
-		u.state.confirming = false
-		u.state.executing = false
+	u.state.configuring = true
+	u.state.querying = false
+	u.state.confirming = false
+	u.state.executing = false
 
-		u.state.command = ""
-		u.configFlow = newConfigFlow()
-		u.components.prompt = NewPrompt(ConfigPromptMode)
-		u.refreshConfigScreen()
+	u.state.command = ""
+	u.configFlow = newConfigFlow()
+	u.components.prompt = NewPrompt(ConfigPromptMode)
+	u.refreshConfigScreen()
 
-		return nil
-	}
+	return textinput.Blink
 }
 
 func (u *Ui) finishConfig() tea.Cmd {
@@ -464,19 +518,25 @@ func (u *Ui) finishConfig() tea.Cmd {
 		)
 	} else {
 		if u.state.promptMode == ExecPromptMode {
-			u.state.querying = true
 			u.state.configuring = false
 			u.state.buffer = ""
+			if run.RequiresTTY(u.state.args) {
+				return tea.Sequence(
+					tea.Println(u.components.renderer.RenderSuccess("\n[settings ok]")),
+					u.execCommand(u.state.args),
+				)
+			}
+			u.state.querying = true
 			return tea.Sequence(
 				tea.Println(u.components.renderer.RenderSuccess("\n[settings ok]")),
 				u.components.spinner.Tick,
 				u.startExec(u.state.args),
 			)
 		} else {
+			u.state.querying = true
 			return tea.Batch(
 				u.components.spinner.Tick,
-				u.startChatStream(u.state.args),
-				u.awaitChatStream(),
+				u.startChat(u.state.args),
 			)
 		}
 	}
@@ -577,8 +637,14 @@ func (u *Ui) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						cmd,
 						tea.Println(inputPrint),
 						u.components.spinner.Tick,
-						u.startChatStream(input),
-						u.awaitChatStream(),
+						u.startChat(input),
+					)
+				}
+				if run.RequiresTTY(input) {
+					return u, tea.Sequence(
+						cmd,
+						tea.Println(inputPrint),
+						u.execCommand(input),
 					)
 				}
 				u.state.querying = true
@@ -672,12 +738,18 @@ func (u *Ui) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (u *Ui) startExec(input string) tea.Cmd {
-	return func() tea.Msg {
-		logger.Log.Debug().Str("input", input).Msg("starting exec")
-		u.state.confirming = false
-		u.state.buffer = ""
-		u.state.command = ""
+	logger.Log.Debug().Str("input", input).Msg("starting exec")
 
+	// Mutate state here, on the main loop. The returned tea.Cmd runs on its own
+	// goroutine and must not touch u.* -- it may only read the locals captured below.
+	u.state.confirming = false
+	u.state.buffer = ""
+	u.state.command = ""
+
+	shell := u.config.GetSystemConfig().GetShell()
+	engine := u.engine
+
+	return func() tea.Msg {
 		type engineResult struct {
 			out *ai.EngineExecOutput
 			err error
@@ -685,11 +757,11 @@ func (u *Ui) startExec(input string) tea.Cmd {
 		engineCh := make(chan engineResult, 1)
 
 		go func() {
-			out, err := u.engine.ExecCompletion(context.Background(), input)
+			out, err := engine.ExecCompletion(context.Background(), input)
 			engineCh <- engineResult{out, err}
 		}()
 
-		cmdOut, cmdErr := run.RunInteractiveCommand(u.config.GetSystemConfig().GetShell(), input)
+		cmdOut, cmdErr := run.RunInteractiveCommand(shell, input)
 
 		if cmdErr == nil {
 			logger.Log.Debug().Str("cmd", input).Msg("direct exec succeeded")
@@ -711,17 +783,20 @@ func (u *Ui) startExec(input string) tea.Cmd {
 	}
 }
 
-func (u *Ui) startChatStream(input string) tea.Cmd {
-	return func() tea.Msg {
-		logger.Log.Debug().Str("input", input).Msg("starting chat stream")
-		u.state.executing = false
-		u.state.confirming = false
-		u.state.buffer = ""
-		u.state.command = ""
+func (u *Ui) startChat(input string) tea.Cmd {
+	logger.Log.Debug().Str("input", input).Msg("starting chat")
 
-		res, err := u.engine.ChatStreamCompletion(context.Background(), input)
+	u.state.executing = false
+	u.state.confirming = false
+	u.state.buffer = ""
+	u.state.command = ""
+
+	engine := u.engine
+
+	return func() tea.Msg {
+		res, err := engine.ChatCompletion(context.Background(), input)
 		if err != nil {
-			logger.Log.Error().Err(err).Msg("chat stream failed")
+			logger.Log.Error().Err(err).Msg("chat failed")
 			return chatErrorMsg{err}
 		}
 
@@ -731,45 +806,21 @@ func (u *Ui) startChatStream(input string) tea.Cmd {
 	}
 }
 
-func (u *Ui) awaitChatStream() tea.Cmd {
-	return func() tea.Msg {
-		output := <-u.engine.GetChannel()
-		u.state.buffer += output.GetContent()
-		u.state.querying = !output.IsLast()
-
-		return output
-	}
-}
-
 func (u *Ui) execCommand(input string) tea.Cmd {
 	u.state.querying = false
 	u.state.confirming = false
 	u.state.executing = true
+	u.state.buffer = ""
 
-	return func() tea.Msg {
-		logger.Log.Info().Str("shell", u.config.GetSystemConfig().GetShell()).Str("command", input).Msg("executing command")
-		output, error := run.RunInteractiveCommand(u.config.GetSystemConfig().GetShell(), input)
-		u.state.executing = false
-		u.state.command = ""
-		if u.state.runMode == ReplMode {
-			content := strings.TrimSpace(output)
-			if content == "" {
-				content = "[no output]"
-			}
+	shell := u.config.GetSystemConfig().GetShell()
+	logger.Log.Info().Str("shell", shell).Str("command", input).Msg("executing command")
 
-			u.engine.AppendAssistantMessage(
-				fmt.Sprintf("Command: %s\nOutput:\n%s", input, content),
-			)
-		}
-
-		if error != nil {
-			logger.Log.Error().Err(error).Str("command", input).Msg("command execution failed")
-		} else {
-			logger.Log.Info().Str("command", input).Msg("command executed successfully")
-		}
-
-		return run.NewRunOutput(error, "[error]", "[ok]", output)
-	}
+	// tea.ExecProcess releases the terminal to the child process, so commands
+	// that prompt (sudo) or take the screen (vim, top) work. Their output goes
+	// straight to the terminal rather than being captured.
+	return tea.ExecProcess(run.PrepareShellCommand(shell, input), func(err error) tea.Msg {
+		return commandFinishedMsg{command: input, err: err}
+	})
 }
 
 func (u *Ui) editSettings() tea.Cmd {
@@ -777,43 +828,41 @@ func (u *Ui) editSettings() tea.Cmd {
 	u.state.confirming = false
 	u.state.executing = true
 
+	systemConfig := u.config.GetSystemConfig()
 	c := run.PrepareEditSettingsCommand(
-		u.config.GetSystemConfig().GetShell(),
+		systemConfig.GetShell(),
 		fmt.Sprintf(
 			"%s %s",
-			u.config.GetSystemConfig().GetEditor(),
-			u.config.GetSystemConfig().GetConfigFile(),
+			systemConfig.GetEditor(),
+			systemConfig.GetConfigFile(),
 		),
 	)
 
-	return tea.ExecProcess(c, func(error error) tea.Msg {
-		u.state.executing = false
-		u.state.command = ""
+	engineMode := ai.ExecEngineMode
+	if u.state.promptMode == ChatPromptMode {
+		engineMode = ai.ChatEngineMode
+	}
+	pipe := u.state.pipe
 
-		if error != nil {
-			return run.NewRunOutput(error, "[settings error]", "", "")
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return settingsReloadedMsg{err: err}
 		}
 
-		config, error := config.NewConfig()
-		if error != nil {
-			return run.NewRunOutput(error, "[settings error]", "", "")
+		newConfig, err := config.NewConfig()
+		if err != nil {
+			return settingsReloadedMsg{err: err}
 		}
 
-		u.config = config
-		engineMode := ai.ExecEngineMode
-		if u.state.promptMode == ChatPromptMode {
-			engineMode = ai.ChatEngineMode
+		engine, err := ai.NewEngine(engineMode, newConfig)
+		if err != nil {
+			return settingsReloadedMsg{err: err}
 		}
 
-		engine, error := ai.NewEngine(engineMode, config)
-		if u.state.pipe != "" {
-			engine.SetPipe(u.state.pipe)
+		if pipe != "" {
+			engine.SetPipe(pipe)
 		}
-		if error != nil {
-			return run.NewRunOutput(error, "[settings error]", "", "")
-		}
-		u.engine = engine
 
-		return run.NewRunOutput(nil, "", "[settings ok]", "")
+		return settingsReloadedMsg{config: newConfig, engine: engine}
 	})
 }

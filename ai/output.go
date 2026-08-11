@@ -17,26 +17,3 @@ func (eo EngineExecOutput) GetExplanation() string {
 func (eo EngineExecOutput) IsExecutable() bool {
 	return eo.Executable
 }
-
-type EngineChatStreamOutput struct {
-	content    string
-	last       bool
-	interrupt  bool
-	executable bool
-}
-
-func (co EngineChatStreamOutput) GetContent() string {
-	return co.content
-}
-
-func (co EngineChatStreamOutput) IsLast() bool {
-	return co.last
-}
-
-func (co EngineChatStreamOutput) IsInterrupt() bool {
-	return co.interrupt
-}
-
-func (co EngineChatStreamOutput) IsExecutable() bool {
-	return co.executable
-}
