@@ -1,12 +1,14 @@
 # Clipper - AI powered terminal assistant
 
+> Forked from https://github.com/ekkinox/yai/
+
 [![build](https://github.com/ilayaraja97/clipper/actions/workflows/build.yml/badge.svg)](https://github.com/ilayaraja97/clipper/actions/workflows/build.yml)
 [![release](https://github.com/ilayaraja97/clipper/actions/workflows/release.yml/badge.svg)](https://github.com/ilayaraja97/clipper/actions/workflows/release.yml)
 [![doc](https://github.com/ilayaraja97/clipper/actions/workflows/jekyll-gh-pages.yml/badge.svg)](https://github.com/ilayaraja97/clipper/actions/workflows/jekyll-gh-pages.yml)
 
 > Unleash the power of artificial intelligence to streamline your command line experience.
 
-[![Demo](https://img.youtube.com/vi/VCf5SbkZZLE/0.jpg)](https://www.youtube.com/watch?v=VCf5SbkZZLE)
+![Intro](docs/_assets/intro.gif)
 
 ## What is Clipper?
 

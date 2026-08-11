@@ -25,9 +25,7 @@ type Engine struct {
 	config   *config.Config
 	client   llms.Model
 	messages []llms.MessageContent
-	channel  chan EngineChatStreamOutput
 	pipe     string
-	running  bool
 	mu       sync.Mutex
 }
 
@@ -72,9 +70,7 @@ func NewEngine(mode EngineMode, config *config.Config) (*Engine, error) {
 		config:   config,
 		client:   client,
 		messages: make([]llms.MessageContent, 0),
-		channel:  make(chan EngineChatStreamOutput),
 		pipe:     "",
-		running:  false,
 		mu:       sync.Mutex{},
 	}, nil
 }
@@ -89,25 +85,8 @@ func (e *Engine) GetMode() EngineMode {
 	return e.mode
 }
 
-func (e *Engine) GetChannel() chan EngineChatStreamOutput {
-	return e.channel
-}
-
 func (e *Engine) SetPipe(pipe string) *Engine {
 	e.pipe = pipe
-
-	return e
-}
-
-func (e *Engine) Interrupt() *Engine {
-	e.channel <- EngineChatStreamOutput{
-		content:    "[Interrupt]",
-		last:       true,
-		interrupt:  true,
-		executable: false,
-	}
-
-	e.running = false
 
 	return e
 }
@@ -124,8 +103,6 @@ func (e *Engine) ExecCompletion(ctx context.Context, input string) (*EngineExecO
 	logger.Log.Debug().Str("input", input).Msg("executing completion")
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
-
-	e.running = true
 
 	e.appendUserMessage(input)
 
@@ -189,12 +166,10 @@ func (e *Engine) ExecCompletion(ctx context.Context, input string) (*EngineExecO
 	return &output, nil
 }
 
-func (e *Engine) ChatStreamCompletion(ctx context.Context, input string) (*EngineExecOutput, error) {
-	logger.Log.Debug().Str("input", input).Msg("starting chat stream completion")
+func (e *Engine) ChatCompletion(ctx context.Context, input string) (*EngineExecOutput, error) {
+	logger.Log.Debug().Str("input", input).Msg("starting chat completion")
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
-
-	e.running = true
 
 	e.appendUserMessage(input)
 
