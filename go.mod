@@ -11,7 +11,7 @@ require (
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
-	github.com/tmc/langchaingo v0.1.14
+	github.com/tmc/langchaingo v0.1.15
 )
 
 require (
